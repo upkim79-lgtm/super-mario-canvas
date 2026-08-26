@@ -2,29 +2,44 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101425">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>슈퍼 마리오 - HTML 캔버스 게임</title>
 <style>
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; padding: 0; height: 100%;
+    margin: 0; padding: 0;
+    height: 100%; height: 100dvh;
     background: #101425;
     font-family: "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
     overflow: hidden;
+    overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
   }
   #wrap {
     position: fixed; inset: 0;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
     gap: 10px;
+    touch-action: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  /* 게임 화면 + 화면 위에 올라가는 UI의 기준 박스 */
+  #stage {
+    --chrome: 66px;
+    position: relative;
+    aspect-ratio: 5 / 3;
+    width: min(100%, calc((100vh - var(--chrome)) * 5 / 3));
+    width: min(100%, calc((100dvh - var(--chrome)) * 5 / 3));
   }
   canvas {
-    display: block;
-    width: min(100vw, calc(100vh * 5 / 3));
-    height: auto;
-    max-height: 88vh;
-    aspect-ratio: 5 / 3;
+    display: block; width: 100%; height: 100%;
     background: #6ab7ff;
     border: 3px solid #2a2f4a;
     border-radius: 6px;
@@ -37,39 +52,90 @@
     line-height: 1.6; padding: 0 12px;
   }
   #help b { color: #d7dcff; }
-  #pad {
-    display: none;
-    width: min(100vw, 640px);
-    justify-content: space-between;
-    padding: 0 14px;
-    user-select: none;
+  #rotate { display: none; color: #6f76a0; font-size: 12px; text-align: center; }
+
+  /* 우상단 시스템 버튼 (일시정지 / 소리 / 재시작 / 전체화면) */
+  #sys {
+    position: absolute; top: 10%; right: 7px;
+    display: flex; gap: 6px; z-index: 3;
   }
-  #pad .side { display: flex; gap: 12px; }
+  #sys button {
+    width: 34px; height: 34px; padding: 0;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,.28);
+    background: rgba(16,20,37,.55);
+    color: #fff; font-size: 15px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: none; cursor: pointer;
+  }
+  #sys button:active { background: rgba(80,90,140,.75); }
+  body.touch #sys button { width: 42px; height: 42px; font-size: 18px; border-radius: 11px; }
+  #sys button.off { opacity: .45; }
+
+  /* 터치 조작 패드 */
+  :root { --bs: 68px; }
+  #pad { display: none; }
+  body.touch #pad {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    width: 100%; z-index: 4;
+  }
+  #pad .side { display: flex; gap: 14px; pointer-events: auto; }
   #pad button {
-    width: 68px; height: 68px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,.25);
-    background: rgba(255,255,255,.12);
-    color: #fff; font-size: 22px; font-weight: 700;
+    width: var(--bs); height: var(--bs); padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.3);
+    background: rgba(255,255,255,.16);
+    color: #fff; font-size: calc(var(--bs) * .34); font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
     touch-action: none;
+    -webkit-user-select: none; user-select: none;
   }
-  #pad button:active { background: rgba(255,255,255,.32); }
-  @media (hover: none) and (pointer: coarse) {
-    #pad { display: flex; }
-    #help { display: none; }
+  #pad button.on { background: rgba(255,255,255,.45); transform: scale(.93); }
+  body.touch { --bs: clamp(58px, 13vmin, 92px); }
+  body.touch #help { display: none; }
+  body.touch #stage { --chrome: 0px; }
+
+  /* 가로 모드: 패드를 화면 하단에 겹쳐 게임 화면을 최대로 */
+  @media (orientation: landscape) {
+    body.touch #wrap { padding-top: 0; padding-bottom: 0; }
+    body.touch canvas { border: 0; border-radius: 0; box-shadow: none; }
+    body.touch #pad {
+      position: fixed; left: 0; right: 0;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
+      pointer-events: none;
+    }
+    body.touch #pad button { background: rgba(255,255,255,.22); }
+  }
+  /* 세로 모드: 캔버스 아래에 큰 버튼을 배치 */
+  @media (orientation: portrait) {
+    body.touch #wrap { justify-content: flex-start; padding-top: max(14px, env(safe-area-inset-top)); }
+    body.touch #stage { width: 100%; }
+    body.touch #pad { margin-top: 5vh; padding: 0 16px; --bs: clamp(64px, 20vw, 106px); }
+    body.touch #rotate { display: block; }
   }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="game" width="800" height="480"></canvas>
+  <div id="stage">
+    <canvas id="game" width="800" height="480"></canvas>
+    <div id="sys">
+      <button type="button" data-sys="pause" aria-label="일시정지">&#10074;&#10074;</button>
+      <button type="button" data-sys="sound" aria-label="소리">&#128266;</button>
+      <button type="button" data-sys="restart" aria-label="다시 시작">&#8635;</button>
+      <button type="button" data-sys="full" aria-label="전체화면">&#9974;</button>
+    </div>
+  </div>
+  <div id="rotate">가로로 돌리면 화면이 더 커집니다</div>
   <div id="pad">
     <div class="side">
-      <button data-k="left">&#9664;</button>
-      <button data-k="right">&#9654;</button>
+      <button type="button" data-k="left" aria-label="왼쪽">&#9664;</button>
+      <button type="button" data-k="right" aria-label="오른쪽">&#9654;</button>
     </div>
     <div class="side">
-      <button data-k="run">B</button>
-      <button data-k="jump">A</button>
+      <button type="button" data-k="run" aria-label="달리기">B</button>
+      <button type="button" data-k="jump" aria-label="점프">A</button>
     </div>
   </div>
   <div id="help">
@@ -664,7 +730,9 @@ function overlap(a, b) {
 /* ============================================================
    입력
    ============================================================ */
-var Keys = { left: false, right: false, jump: false, run: false };
+var Keys = { left: false, right: false, jump: false, run: false };  // 최종 입력(키보드 + 터치)
+var KB   = { left: false, right: false, jump: false, run: false };  // 키보드 상태
+var PAD  = { left: false, right: false, jump: false, run: false };  // 터치 패드 상태
 var jumpPressed = false;
 var KMAP = {
   ArrowLeft: 'left', KeyA: 'left',
@@ -672,6 +740,30 @@ var KMAP = {
   Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyZ: 'jump', KeyK: 'jump',
   ShiftLeft: 'run', ShiftRight: 'run', KeyX: 'run', KeyJ: 'run'
 };
+
+// 코어스 포인터(손가락) 기기에서만 가상 패드를 노출한다.
+var isTouch = /[?&]touch=1/.test(location.search) || (window.matchMedia
+  ? window.matchMedia('(pointer: coarse)').matches
+  : ('ontouchstart' in window));
+if (isTouch) document.body.className += ' touch';
+
+var padEl = document.getElementById('pad');
+var sysEl = document.getElementById('sys');
+var padPointers = {};
+
+// 키보드와 터치를 합쳐 최종 입력을 만든다(둘 중 하나라도 눌려 있으면 ON).
+function syncKeys() {
+  for (var k in Keys) {
+    var v = !!(KB[k] || PAD[k]);
+    if (k === 'jump' && v && !Keys.jump) jumpPressed = true;
+    Keys[k] = v;
+  }
+}
+function clearInput() {
+  for (var k in Keys) { KB[k] = false; PAD[k] = false; Keys[k] = false; }
+  padPointers = {};
+  refreshPadVisual();
+}
 
 function anyStart() {
   Snd.init(); Snd.resume();
@@ -685,65 +777,197 @@ function anyStart() {
   }
 }
 
+/* ---------- 키보드 ---------- */
 window.addEventListener('keydown', function (e) {
   var k = KMAP[e.code];
-  if (k) {
-    e.preventDefault();
-    if (k === 'jump' && !Keys.jump) jumpPressed = true;
-    Keys[k] = true;
-  }
+  if (k) { e.preventDefault(); KB[k] = true; syncKeys(); }
   if (e.code === 'Space' || e.code === 'Enter') {
     if (STATE !== 'play') anyStart();
+    else if (paused) paused = false;
     Snd.init(); Snd.resume();
   }
-  if (e.code === 'KeyP' && STATE === 'play') paused = !paused;
-  if (e.code === 'KeyM') {
-    Snd.init(); Snd.on = !Snd.on;
-    if (!Snd.on) Snd.musicStop();
-    else if (STATE === 'play') Snd.musicStart();
-  }
+  if (e.code === 'KeyP') togglePause();
+  if (e.code === 'KeyM') toggleSound();
   if (e.code === 'KeyR') {
-    Snd.init(); Snd.resume();
-    if (STATE === 'title') anyStart();
-    else { score = 0; coins = 0; lives = START_LIVES; P.big = false; loadLevel(0); }
+    if (STATE === 'title') { Snd.init(); Snd.resume(); anyStart(); }
+    else restartGame();
   }
 }, false);
 
 window.addEventListener('keyup', function (e) {
   var k = KMAP[e.code];
-  if (k) { e.preventDefault(); Keys[k] = false; }
+  if (k) { e.preventDefault(); KB[k] = false; syncKeys(); }
 }, false);
 
 window.addEventListener('blur', function () {
-  Keys.left = Keys.right = Keys.jump = Keys.run = false;
+  clearInput();
   if (STATE === 'play') paused = true;
 });
-
-canvas.addEventListener('pointerdown', function () {
-  if (STATE !== 'play') anyStart();
-  Snd.init(); Snd.resume();
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) {
+    clearInput();
+    if (STATE === 'play') paused = true;
+  }
 });
 
-(function bindPad() {
-  var btns = document.querySelectorAll('#pad button');
-  for (var i = 0; i < btns.length; i++) {
-    (function (b) {
-      var k = b.getAttribute('data-k');
-      function down(e) {
-        e.preventDefault();
-        if (k === 'jump' && !Keys.jump) jumpPressed = true;
-        Keys[k] = true;
-        Snd.init(); Snd.resume();
-        if (STATE !== 'play') anyStart();
-      }
-      function up(e) { e.preventDefault(); Keys[k] = false; }
-      b.addEventListener('pointerdown', down);
-      b.addEventListener('pointerup', up);
-      b.addEventListener('pointercancel', up);
-      b.addEventListener('pointerleave', up);
-    })(btns[i]);
+/* ---------- 화면 탭 ---------- */
+canvas.addEventListener('pointerdown', function () {
+  Snd.init(); Snd.resume();
+  if (STATE !== 'play') anyStart();
+  else if (paused) paused = false;   // 키보드 없이도 일시정지를 풀 수 있어야 한다
+});
+
+/* ---------- 터치 패드 ----------
+   손가락이 버튼 사이를 미끄러져도 입력이 이어지도록
+   포인터 ID별로 현재 짚고 있는 버튼을 좌표로 매번 판정한다. */
+function padKeyAt(x, y) {
+  var el = document.elementFromPoint(x, y);
+  while (el && el !== document.body) {
+    if (el.getAttribute) {
+      var k = el.getAttribute('data-k');
+      if (k) return k;
+    }
+    el = el.parentNode;
   }
-})();
+  return null;
+}
+function refreshPadVisual() {
+  if (!padEl) return;
+  var btns = padEl.querySelectorAll('button[data-k]');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].className = PAD[btns[i].getAttribute('data-k')] ? 'on' : '';
+  }
+}
+function padRecalc() {
+  for (var k in PAD) PAD[k] = false;
+  for (var id in padPointers) {
+    var key = padPointers[id];
+    if (key) PAD[key] = true;
+  }
+  syncKeys();
+  refreshPadVisual();
+}
+if (padEl) {
+  padEl.addEventListener('pointerdown', function (e) {
+    var k = padKeyAt(e.clientX, e.clientY);
+    if (!k) return;
+    e.preventDefault();
+    // 터치는 pointerdown 순간 암묵적 포인터 캡처가 걸린다. 풀어줘야 다른 버튼으로 이동이 인식된다.
+    try {
+      if (e.target.hasPointerCapture && e.target.hasPointerCapture(e.pointerId)) {
+        e.target.releasePointerCapture(e.pointerId);
+      }
+    } catch (err) {}
+    padPointers[e.pointerId] = k;
+    padRecalc();
+    Snd.init(); Snd.resume();
+    if (STATE !== 'play') anyStart();
+    else if (paused) paused = false;
+  });
+}
+window.addEventListener('pointermove', function (e) {
+  if (!(e.pointerId in padPointers)) return;
+  var k = padKeyAt(e.clientX, e.clientY);
+  if (k === padPointers[e.pointerId]) return;
+  padPointers[e.pointerId] = k;
+  padRecalc();
+});
+function padRelease(e) {
+  if (!(e.pointerId in padPointers)) return;
+  delete padPointers[e.pointerId];
+  padRecalc();
+}
+window.addEventListener('pointerup', padRelease);
+window.addEventListener('pointercancel', padRelease);
+if (isTouch) {
+  window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+}
+
+/* ---------- 시스템 버튼(키보드 없이도 모든 기능 사용 가능) ---------- */
+function sysBtn(name) { return sysEl ? sysEl.querySelector('button[data-sys="' + name + '"]') : null; }
+
+function togglePause() {
+  if (STATE !== 'play') return;
+  paused = !paused;
+  if (paused) Snd.musicStop();
+  else if (Snd.on) Snd.musicStart();
+}
+function toggleSound() {
+  Snd.init(); Snd.resume();
+  Snd.on = !Snd.on;
+  if (!Snd.on) Snd.musicStop();
+  else if (STATE === 'play' && !paused) Snd.musicStart();
+}
+function restartGame() {
+  Snd.init(); Snd.resume();
+  score = 0; coins = 0; lives = START_LIVES;
+  P.big = false; paused = false;
+  loadLevel(0);
+}
+function lockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      var p = screen.orientation.lock('landscape');
+      if (p && p['catch']) p['catch'](function () {});
+    }
+  } catch (e) {}
+}
+function toggleFullscreen() {
+  var el = document.documentElement, d = document;
+  if (!d.fullscreenElement && !d.webkitFullscreenElement) {
+    var req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    var pr = req.call(el);
+    if (pr && pr.then) pr.then(lockLandscape, function () {});
+    else lockLandscape();
+  } else {
+    var ex = d.exitFullscreen || d.webkitExitFullscreen;
+    if (ex) ex.call(d);
+  }
+}
+if (sysEl) {
+  sysEl.addEventListener('pointerdown', function (e) {
+    var el = e.target, name = null;
+    while (el && el !== sysEl) {
+      if (el.getAttribute) {
+        var n = el.getAttribute('data-sys');
+        if (n) { name = n; break; }
+      }
+      el = el.parentNode;
+    }
+    if (!name) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (name === 'pause') togglePause();
+    else if (name === 'sound') toggleSound();
+    else if (name === 'restart') { if (STATE === 'title') anyStart(); else restartGame(); }
+    else if (name === 'full') toggleFullscreen();
+  });
+  if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) {
+    var fb = sysBtn('full');
+    if (fb) fb.style.display = 'none';
+  }
+}
+
+// 아이콘은 상태가 바뀌었을 때만 갱신한다(매 프레임 DOM 쓰기 방지).
+var _icoPause = null, _icoSound = null;
+function updateSysIcons() {
+  if (!sysEl) return;
+  var p = (paused && STATE === 'play');
+  if (p !== _icoPause) {
+    _icoPause = p;
+    var b = sysBtn('pause');
+    if (b) b.innerHTML = p ? '\u25B6' : '\u275A\u275A';
+  }
+  if (Snd.on !== _icoSound) {
+    _icoSound = Snd.on;
+    var t = sysBtn('sound');
+    if (t) {
+      t.innerHTML = Snd.on ? '\uD83D\uDD0A' : '\uD83D\uDD07';
+      t.className = Snd.on ? '' : 'off';
+    }
+  }
+}
 
 /* ============================================================
    이펙트
@@ -1389,7 +1613,9 @@ function drawTitle() {
   text('SPACE 또는 화면을 눌러 시작', VW / 2, 322, 22, '#fff', 'center');
   ctx.globalAlpha = 1;
 
-  text('←→ 이동 · SPACE 점프 · SHIFT 달리기 · P 일시정지 · M 소리', VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
+  text(isTouch ? '◀ ▶ 이동 · A 점프(길게=높이) · B 달리기 · 오른쪽 위 버튼으로 일시정지/소리/전체화면'
+            : '←→ 이동 · SPACE 점프 · SHIFT 달리기 · P 일시정지 · M 소리',
+       VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
   text('블록을 아래에서 치고 · 굼바를 밟고 · 깃발까지 달려가세요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
   text('BEST ' + pad(best, 6), VW / 2, 430, 15, '#ffe9a8', 'center');
 }
@@ -1398,7 +1624,7 @@ function drawOverlay() {
   if (paused && STATE === 'play') {
     dimScreen(0.5);
     text('일시정지', VW / 2, VH / 2 - 14, 44, '#fff', 'center');
-    text('P 키를 눌러 계속', VW / 2, VH / 2 + 32, 18, '#cbd4f5', 'center');
+    text(isTouch ? '화면을 눌러 계속' : 'P 키를 눌러 계속', VW / 2, VH / 2 + 32, 18, '#cbd4f5', 'center');
   } else if (STATE === 'clear') {
     dimScreen(0.35);
     text('스테이지 클리어!', VW / 2, VH / 2 - 30, 44, '#ffd93b', 'center');
@@ -1411,12 +1637,12 @@ function drawOverlay() {
     dimScreen(0.68);
     text('GAME OVER', VW / 2, VH / 2 - 40, 56, '#ff6b5b', 'center');
     text('최종 점수 ' + pad(score, 6) + '  ·  최고 ' + pad(best, 6), VW / 2, VH / 2 + 16, 20, '#fff', 'center');
-    text('SPACE / R 키로 다시 시작', VW / 2, VH / 2 + 62, 18, '#cbd4f5', 'center');
+    text(isTouch ? '화면을 눌러 다시 시작' : 'SPACE / R 키로 다시 시작', VW / 2, VH / 2 + 62, 18, '#cbd4f5', 'center');
   } else if (STATE === 'win') {
     dimScreen(0.68);
     text('축하합니다! 모든 코스 클리어!', VW / 2, VH / 2 - 46, 40, '#ffd93b', 'center');
     text('최종 점수 ' + pad(score, 6) + '  ·  최고 ' + pad(best, 6), VW / 2, VH / 2 + 12, 22, '#fff', 'center');
-    text('SPACE 키로 타이틀로', VW / 2, VH / 2 + 58, 18, '#cbd4f5', 'center');
+    text(isTouch ? '화면을 눌러 타이틀로' : 'SPACE 키로 타이틀로', VW / 2, VH / 2 + 58, 18, '#cbd4f5', 'center');
   }
 }
 
@@ -1446,6 +1672,7 @@ function frame(ts) {
   while (acc >= STEP && steps < 6) { update(STEP); acc -= STEP; steps++; }
   if (steps === 0) { worldT += delta; Snd.tick(); }
   render();
+  updateSysIcons();
   requestAnimationFrame(frame);
 }
 
