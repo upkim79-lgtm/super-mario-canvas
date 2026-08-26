@@ -80,6 +80,8 @@
     width: 100%; z-index: 4;
   }
   #pad .side { display: flex; gap: 14px; pointer-events: auto; }
+  #pad .dpad { flex-direction: column; align-items: center; gap: 10px; }
+  #pad .dpad .row { display: flex; gap: 10px; }
   #pad button {
     width: var(--bs); height: var(--bs); padding: 0;
     border-radius: 50%;
@@ -105,13 +107,14 @@
       padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
       pointer-events: none;
     }
+    body.touch #pad { --bs: clamp(48px, 11vmin, 76px); }
     body.touch #pad button { background: rgba(255,255,255,.22); }
   }
   /* 세로 모드: 캔버스 아래에 큰 버튼을 배치 */
   @media (orientation: portrait) {
     body.touch #wrap { justify-content: flex-start; padding-top: max(14px, env(safe-area-inset-top)); }
     body.touch #stage { width: 100%; }
-    body.touch #pad { margin-top: 5vh; padding: 0 16px; --bs: clamp(64px, 20vw, 106px); }
+    body.touch #pad { margin-top: 5vh; padding: 0 14px; --bs: clamp(46px, 13vw, 80px); }
     body.touch #rotate { display: block; }
   }
 </style>
@@ -129,9 +132,13 @@
   </div>
   <div id="rotate">가로로 돌리면 화면이 더 커집니다</div>
   <div id="pad">
-    <div class="side">
-      <button type="button" data-k="left" aria-label="왼쪽">&#9664;</button>
-      <button type="button" data-k="right" aria-label="오른쪽">&#9654;</button>
+    <div class="side dpad">
+      <button type="button" data-k="jump" aria-label="위 (점프)">&#9650;</button>
+      <div class="row">
+        <button type="button" data-k="left" aria-label="왼쪽">&#9664;</button>
+        <button type="button" data-k="down" aria-label="아래 (숙이기 / 파이프 진입)">&#9660;</button>
+        <button type="button" data-k="right" aria-label="오른쪽">&#9654;</button>
+      </div>
     </div>
     <div class="side">
       <button type="button" data-k="run" aria-label="달리기">B</button>
@@ -140,6 +147,7 @@
   </div>
   <div id="help">
     <b>&larr;&rarr; / A D</b> 이동 &nbsp;&middot;&nbsp; <b>Space / &uarr;</b> 점프(길게 누르면 높이) &nbsp;&middot;&nbsp;
+    <b>&darr; / S</b> 숙이기 &middot; 파이프 진입 &nbsp;&middot;&nbsp;
     <b>Shift</b> 달리기 &nbsp;&middot;&nbsp; <b>P</b> 일시정지 &nbsp;&middot;&nbsp; <b>R</b> 재시작 &nbsp;&middot;&nbsp; <b>M</b> 소리
   </div>
 </div>
@@ -169,36 +177,30 @@ ctx.imageSmoothingEnabled = false;
    사운드 (WebAudio · 외부 파일 없음)
    ============================================================ */
 var N = {
-  C2:65.41, E2:82.41, F2:87.31, G2:98.00, A2:110.00, B2:123.47,
   C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00, A3:220.00, B3:246.94,
   C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88,
   C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880.00, B5:987.77,
   C6:1046.50, E6:1318.51
 };
-/* ------------------------------------------------------------
-   배경음악: 느리고 잔잔한 앰비언트 (마인크래프트 분위기의 오리지널 곡)
-   세 트랙의 길이를 다르게(64 / 48 / 96 unit) 만들어 서로 어긋나며
-   반복되도록 했다. 실제 반복 주기는 192 unit(약 58초)이라 덜 지겹다.
-   선율과 아르페지오는 C 펜타토닉/온음계라 어떤 조합으로 겹쳐도 어울린다.
-   ------------------------------------------------------------ */
-var MUSIC_LEAD = [
-  [N.E5,6],[N.G5,6],[N.A5,4],
-  [N.G5,6],[N.E5,6],[N.D5,4],
-  [N.C5,8],[N.D5,4],[N.E5,4],
-  [N.G5,6],[N.A5,4],[0,6]
+var MELODY = [
+  [N.E5,1],[N.G5,1],[N.C6,2],[N.B5,1],[N.G5,1],[N.E5,2],
+  [N.F5,1],[N.A5,1],[N.C6,2],[N.A5,2],[N.F5,2],
+  [N.G5,1],[N.B5,1],[N.C6,2],[N.B5,1],[N.A5,1],[N.G5,2],
+  [N.E5,2],[N.G5,2],[N.C6,3],[0,1],
+  [N.C6,1],[N.B5,1],[N.A5,2],[N.G5,1],[N.F5,1],[N.E5,2],
+  [N.D5,1],[N.E5,1],[N.F5,2],[N.G5,2],[N.A5,2],
+  [N.G5,1],[N.E5,1],[N.C5,2],[N.E5,1],[N.G5,1],[N.C6,2],
+  [N.B5,2],[N.G5,2],[N.E5,2],[0,2]
 ];
-var MUSIC_ARP = [
-  [N.C4,2],[N.E4,2],[N.G4,2],[N.A4,2],[N.G4,2],[N.E4,2],
-  [N.D4,2],[N.F4,2],[N.A4,2],[N.C5,2],[N.A4,2],[N.F4,2],
-  [N.E4,2],[N.G4,2],[N.B4,2],[N.C5,2],[N.B4,2],[N.G4,2],
-  [N.D4,2],[N.G4,2],[N.B4,2],[N.D5,2],[N.B4,2],[N.G4,2]
-];
-var MUSIC_PAD = [
-  [N.C3,24],[N.A2,24],[N.F2,24],[N.G2,24]
-];
+var BASS = [
+  N.C3,N.C3,N.G3,N.G3, N.F3,N.F3,N.C3,N.C3,
+  N.G3,N.G3,N.E3,N.E3, N.C3,N.C3,N.G3,N.G3,
+  N.A3,N.A3,N.E3,N.E3, N.F3,N.F3,N.G3,N.G3,
+  N.C3,N.C3,N.E3,N.E3, N.G3,N.G3,N.C3,N.C3
+].map(function (f) { return [f, 2]; });
 
 var Snd = {
-  ctx: null, master: null, musicBus: null, on: true, playing: false, unit: 0.30, tracks: null,
+  ctx: null, master: null, on: true, playing: false, unit: 0.135, tracks: null,
   init: function () {
     if (this.ctx) return;
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -207,18 +209,9 @@ var Snd = {
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.4;
     this.master.connect(this.ctx.destination);
-    // 음악은 저역 통과 필터를 거쳐 효과음보다 부드럽게 들리도록 한다
-    this.musicBus = this.ctx.createGain();
-    this.musicBus.gain.value = 0.9;
-    var lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 2200;
-    this.musicBus.connect(lp);
-    lp.connect(this.master);
     this.tracks = [
-      { notes: MUSIC_LEAD, i: 0, next: 0, type: 'triangle', vol: 0.11, atk: 0.10 },
-      { notes: MUSIC_ARP,  i: 0, next: 0, type: 'sine',     vol: 0.06, atk: 0.02 },
-      { notes: MUSIC_PAD,  i: 0, next: 0, type: 'sine',     vol: 0.10, atk: 0.80 }
+      { notes: MELODY, i: 0, next: 0, type: 'square',   vol: 0.16 },
+      { notes: BASS,   i: 0, next: 0, type: 'triangle', vol: 0.20 }
     ];
   },
   resume: function () { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
@@ -233,18 +226,6 @@ var Snd = {
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     o.connect(g); g.connect(this.master);
     o.start(at); o.stop(at + dur + 0.03);
-  },
-  mnote: function (freq, at, dur, type, vol, atk) {
-    if (!this.ctx || !this.on || !freq) return;
-    var o = this.ctx.createOscillator(), g = this.ctx.createGain();
-    o.type = type || 'sine';
-    o.frequency.setValueAtTime(freq, at);
-    var a = Math.min(atk || 0.05, dur * 0.4);
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(vol, at + a);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    o.connect(g); g.connect(this.musicBus);
-    o.start(at); o.stop(at + dur + 0.05);
   },
   seq: function (list) {
     if (!this.ctx || !this.on) return;
@@ -265,6 +246,8 @@ var Snd = {
       case 'power':  this.seq([[N.C4,0,0.07],[N.E4,0.07,0.07],[N.G4,0.14,0.07],[N.C5,0.21,0.07],[N.E5,0.28,0.14]]); break;
       case 'shrink': this.seq([[N.G4,0,0.08],[N.E4,0.08,0.08],[N.C4,0.16,0.16]]); break;
       case 'life':   this.seq([[N.C5,0,0.09],[N.G5,0.09,0.09],[N.C6,0.18,0.22]]); break;
+      case 'pipe':   this.seq([[N.G4,0,0.09,'square',0.20],[N.E4,0.09,0.09,'square',0.20],
+                                [N.C4,0.18,0.24,'square',0.22,90]]); break;
       case 'start':  this.seq([[N.G4,0,0.09],[N.C5,0.09,0.09],[N.E5,0.18,0.20]]); break;
       case 'die':
         this.musicStop();
@@ -295,7 +278,7 @@ var Snd = {
       while (t.next < ahead && guard++ < 64) {
         var n = t.notes[t.i % t.notes.length];
         var dur = n[1] * this.unit;
-        this.mnote(n[0], t.next, dur * 0.9, t.type, t.vol, t.atk);
+        this.note(n[0], t.next, dur * 0.85, t.type, t.vol);
         t.next += dur; t.i++;
       }
     }
@@ -409,6 +392,25 @@ var THEMES = [
     bush: '#2b3d6b', ground: '#6f4a86', groundDark: '#4a2f5c' }
 ];
 
+/* 파이프로 들어가는 보너스 코인방 (사방이 막힌 작은 방) */
+var BONUS = {
+  name: 'BONUS', width: 26, theme: 2, bonus: true, gaps: [],
+  items: [
+    { t: 'stone', x: 0, y: 0, w: 26, h: 3 },     // 천장
+    { t: 'stone', x: 0, y: 3, w: 1, h: 10 },     // 좌벽
+    { t: 'stone', x: 25, y: 3, w: 1, h: 10 },    // 우벽
+    { t: 'coin', x: 3, y: 12, n: 7 },
+    { t: 'coin', x: 3, y: 11, n: 7 },
+    { t: 'coin', x: 3, y: 10, n: 7 },
+    { t: 'stone', x: 12, y: 11, w: 3, h: 1 },
+    { t: 'coin', x: 12, y: 10, n: 3 },
+    { t: 'q', x: 17, y: 9, item: 'coin' },
+    { t: 'q', x: 18, y: 9, item: 'coin' },
+    { t: 'pipe', x: 22, h: 2, warp: true },      // 나가는 파이프
+    { t: 'flag', x: 9999 }
+  ]
+};
+
 var LEVELS = [
   {
     name: '1-1', width: 200, theme: 0,
@@ -424,7 +426,7 @@ var LEVELS = [
       { t: 'goomba', x: 27 },
       { t: 'pipe', x: 31, h: 2 },
       { t: 'goomba', x: 37 }, { t: 'goomba', x: 40 },
-      { t: 'pipe', x: 44, h: 3 },
+      { t: 'pipe', x: 44, h: 3, warp: true },
       { t: 'coin', x: 48, y: 9, n: 3 },
       { t: 'pipe', x: 54, h: 3 },
       { t: 'brick', x: 60, y: 9, n: 4 },
@@ -469,7 +471,7 @@ var LEVELS = [
       { t: 'coin', x: 21, y: 9 },
       { t: 'goomba', x: 25 }, { t: 'goomba', x: 27 },
       { t: 'pipe', x: 31, h: 2 },
-      { t: 'pipe', x: 35, h: 3 },
+      { t: 'pipe', x: 35, h: 3, warp: true },
       { t: 'coin', x: 40, y: 9, n: 3 },
       { t: 'stone', x: 45, y: 10, w: 2, h: 1 },
       { t: 'brick', x: 47, y: 7, n: 5 },
@@ -524,7 +526,7 @@ var LEVELS = [
       { t: 'q', x: 58, y: 7, item: 'coin' },
       { t: 'goomba', x: 59 }, { t: 'goomba', x: 62 },
       { t: 'coin', x: 70, y: 9, n: 3 },
-      { t: 'pipe', x: 76, h: 3 },
+      { t: 'pipe', x: 76, h: 3, warp: true },
       { t: 'goomba', x: 81 }, { t: 'goomba', x: 84 },
       { t: 'coin', x: 88, y: 8, n: 4 },
       { t: 'stone', x: 95, y: 10, w: 3, h: 1 },
@@ -570,7 +572,7 @@ function buildLevel(def) {
     if (!inGap(x)) { tiles[13][x] = T_GROUND; tiles[14][x] = T_GROUND; }
   }
 
-  var qc = {}, spawns = [], flagX = w - 10;
+  var qc = {}, spawns = [], warps = {}, flagX = w - 10;
 
   function put(tx, ty, code) {
     if (ty < 0 || ty >= h || tx < 0 || tx >= w) return;
@@ -602,6 +604,8 @@ function buildLevel(def) {
           put(it.x, ty2, py === it.h - 1 ? T_PIPE_TOP : T_PIPE);
           put(it.x + 1, ty2, py === it.h - 1 ? T_PIPE_TOP : T_PIPE);
         }
+        // 워프 파이프는 왼쪽 칸을 키로, 윗면 행을 값으로 기록한다
+        if (it.warp) warps[it.x] = 12 - (it.h - 1);
         break;
       case 'stair':
         for (k = 0; k < it.h; k++)
@@ -615,8 +619,8 @@ function buildLevel(def) {
         break;
     }
   }
-  return { tiles: tiles, w: w, h: h, qc: qc, spawns: spawns, flagX: flagX,
-           name: def.name, theme: THEMES[def.theme || 0] };
+  return { tiles: tiles, w: w, h: h, qc: qc, spawns: spawns, warps: warps, flagX: flagX,
+           bonus: !!def.bonus, name: def.name, theme: THEMES[def.theme || 0] };
 }
 
 /* ============================================================
@@ -625,6 +629,7 @@ function buildLevel(def) {
 var STATE = 'title';           // title | play | dead | clear | over | win
 var paused = false;
 var Level = null, levelIndex = 0;
+var mainWorld = null, pipeSwapped = false, pipeFrom = null;   // 파이프로 들어가기 전 지상 상태
 var camX = 0, gameTime = START_TIME, stateT = 0, worldT = 0;
 var score = 0, coins = 0, lives = START_LIVES;
 var best = 0;
@@ -636,7 +641,7 @@ var bumps = [];      // 블록 튕김 애니메이션
 
 var P = {
   x: 0, y: 0, w: 22, h: 28, vx: 0, vy: 0,
-  onGround: false, face: 1, big: false, invuln: 0,
+  onGround: false, face: 1, big: false, invuln: 0, duck: false,
   anim: 0, jumpHeld: false, dying: false, noClip: false, coyote: 0, jumpBuf: 0
 };
 
@@ -647,6 +652,7 @@ function loadLevel(idx) {
 }
 
 function resetLevel() {
+  mainWorld = null;
   var def = LEVELS[levelIndex];
   Level = buildLevel(def);
   entities = []; parts = []; bumps = [];
@@ -656,7 +662,7 @@ function resetLevel() {
   }
   P.x = 3 * TILE; P.y = 11 * TILE; P.vx = 0; P.vy = 0;
   P.face = 1; P.invuln = 0; P.dying = false; P.noClip = false; P.anim = 0;
-  P.coyote = 0; P.jumpBuf = 0; P.jumpHeld = false;
+  P.coyote = 0; P.jumpBuf = 0; P.jumpHeld = false; P.duck = false;
   setSize(P.big);
   camX = 0; gameTime = START_TIME; stateT = 0;
   STATE = 'play'; paused = false;
@@ -757,15 +763,16 @@ function overlap(a, b) {
 /* ============================================================
    입력
    ============================================================ */
-var Keys = { left: false, right: false, jump: false, run: false };  // 최종 입력(키보드 + 터치)
-var KB   = { left: false, right: false, jump: false, run: false };  // 키보드 상태
-var PAD  = { left: false, right: false, jump: false, run: false };  // 터치 패드 상태
-var jumpPressed = false;
+var Keys = { left: false, right: false, jump: false, run: false, down: false };  // 최종 입력(키보드 + 터치)
+var KB   = { left: false, right: false, jump: false, run: false, down: false };  // 키보드 상태
+var PAD  = { left: false, right: false, jump: false, run: false, down: false };  // 터치 패드 상태
+var jumpPressed = false, downPressed = false;
 var KMAP = {
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
   Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyZ: 'jump', KeyK: 'jump',
-  ShiftLeft: 'run', ShiftRight: 'run', KeyX: 'run', KeyJ: 'run'
+  ShiftLeft: 'run', ShiftRight: 'run', KeyX: 'run', KeyJ: 'run',
+  ArrowDown: 'down', KeyS: 'down'
 };
 
 // 코어스 포인터(손가락) 기기에서만 가상 패드를 노출한다.
@@ -783,6 +790,7 @@ function syncKeys() {
   for (var k in Keys) {
     var v = !!(KB[k] || PAD[k]);
     if (k === 'jump' && v && !Keys.jump) jumpPressed = true;
+    if (k === 'down' && v && !Keys.down) downPressed = true;
     Keys[k] = v;
   }
 }
@@ -1075,6 +1083,42 @@ function killPlayer() {
   Snd.sfx('die');
 }
 
+/* 발밑이 워프 파이프의 윗면이면 그 파이프의 왼쪽 칸 x를, 아니면 -1 */
+function warpPipeAt() {
+  if (!P.onGround || P.dying || !Level.warps) return -1;
+  var cx = Math.floor((P.x + P.w / 2) / TILE);
+  var ty = Math.floor((P.y + P.h + 2) / TILE);
+  var left = -1;
+  if (Level.warps[cx] !== undefined) left = cx;
+  else if (Level.warps[cx - 1] !== undefined) left = cx - 1;
+  if (left < 0 || Level.warps[left] !== ty) return -1;
+  return left;
+}
+
+function startPipe() {
+  Snd.sfx('pipe');
+  pipeFrom = { x: P.x, y: P.y, camX: camX };
+  STATE = 'pipe'; stateT = 0; pipeSwapped = false;
+}
+
+/* 지상 <-> 보너스 방 교체. 지상 상태는 통째로 보관했다가 그대로 되돌린다
+   (다시 만들면 이미 먹은 코인이나 깬 블록이 되살아나므로). */
+function doPipeSwap() {
+  if (mainWorld) {
+    var m = mainWorld; mainWorld = null;
+    Level = m.level; entities = m.entities; parts = m.parts; bumps = m.bumps;
+    P.x = m.px; P.y = m.py; camX = m.camX;
+  } else {
+    mainWorld = { level: Level, entities: entities, parts: parts, bumps: bumps,
+                  px: pipeFrom.x, py: pipeFrom.y, camX: pipeFrom.camX };
+    Level = buildLevel(BONUS);
+    entities = []; parts = []; bumps = [];
+    P.x = 3 * TILE; P.y = 4 * TILE; camX = 0;
+  }
+  P.vx = 0; P.vy = 0; P.onGround = false; P.duck = false;
+  P.jumpHeld = false; P.coyote = 0; P.jumpBuf = 0;
+}
+
 function updatePlayer(dt) {
   if (P.dying) {
     P.vy += GRAV * 0.6 * dt;
@@ -1084,6 +1128,10 @@ function updatePlayer(dt) {
 
   var maxSpd = Keys.run ? MAXRUN : MAXWALK;
   var dir = (Keys.right ? 1 : 0) - (Keys.left ? 1 : 0);
+
+  // 아래 방향키: 땅에서는 숙이기(가속 없이 미끄러지며 정지)
+  P.duck = Keys.down && P.onGround;
+  if (P.duck) dir = 0;
 
   if (dir !== 0) {
     P.vx += dir * ACC * dt;
@@ -1111,11 +1159,15 @@ function updatePlayer(dt) {
   if (!Keys.jump) P.jumpHeld = false;
 
   var gs = (P.vy < 0 && P.jumpHeld && Keys.jump) ? HOLD_SCALE : 1;
+  if (Keys.down && !P.onGround) gs = 1.9;   // 공중에서는 빠른 낙하
   moveBody(P, dt, gs);
 
   // 스테이지 시작점보다 왼쪽으로는 못 나감
   if (P.x < 0) { P.x = 0; if (P.vx < 0) P.vx = 0; }
   if (P.x + P.w > Level.w * TILE) { P.x = Level.w * TILE - P.w; P.vx = 0; }
+
+  // 워프 파이프 위에서 아래 방향키를 누르면 보너스 방으로 (방 안에서는 밖으로)
+  if (downPressed && warpPipeAt() >= 0) { startPipe(); return; }
 
   // 애니메이션
   if (!P.onGround) P.anim = 0;
@@ -1144,7 +1196,7 @@ function updatePlayer(dt) {
   if (P.y > VH + 40) killPlayer();
 
   // 깃대 도착
-  if (P.x + P.w > Level.flagX * TILE + 6) {
+  if (!Level.bonus && P.x + P.w > Level.flagX * TILE + 6) {
     STATE = 'clear'; stateT = 0;
     addScore(2000 + Math.floor(gameTime) * 10);
     Snd.sfx('clear');
@@ -1234,8 +1286,8 @@ function update(dt) {
   worldT += dt;
   Snd.tick();
 
-  if (STATE === 'title' || STATE === 'over' || STATE === 'win') { jumpPressed = false; return; }
-  if (paused) { jumpPressed = false; return; }
+  if (STATE === 'title' || STATE === 'over' || STATE === 'win') { jumpPressed = downPressed = false; return; }
+  if (paused) { jumpPressed = downPressed = false; return; }
 
   stateT += dt;
 
@@ -1250,7 +1302,7 @@ function update(dt) {
     // 앞뒤 양방향으로 따라간다(지나친 코인을 주우러 되돌아갈 수 있도록)
     var target = P.x + P.w / 2 - VW * 0.42;
     camX = target;
-    var maxCam = Level.w * TILE - VW;
+    var maxCam = Math.max(0, Level.w * TILE - VW);
     if (camX < 0) camX = 0;
     if (camX > maxCam) camX = maxCam;
   } else if (STATE === 'dead') {
@@ -1260,6 +1312,13 @@ function update(dt) {
       lives--;
       if (lives < 0) { STATE = 'over'; stateT = 0; Snd.musicStop(); }
       else { P.big = false; resetLevel(); }
+    }
+  } else if (STATE === 'pipe') {
+    if (!pipeSwapped) {
+      P.y += 26 * dt;                                   // 파이프 속으로 가라앉는 연출
+      if (stateT >= 0.42) { pipeSwapped = true; doPipeSwap(); }
+    } else if (stateT >= 0.84) {
+      STATE = 'play'; stateT = 0;
     }
   } else if (STATE === 'clear') {
     updateParts(dt);
@@ -1274,6 +1333,7 @@ function update(dt) {
   }
 
   jumpPressed = false;
+  downPressed = false;
 }
 
 /* ============================================================
@@ -1281,6 +1341,11 @@ function update(dt) {
    ============================================================ */
 function drawBackground() {
   var th = Level ? Level.theme : THEMES[0];
+  if (Level && Level.bonus) {          // 막힌 방이라 하늘/언덕 대신 단색
+    ctx.fillStyle = '#0b0f22';
+    ctx.fillRect(0, 0, VW, VH);
+    return;
+  }
   var g = ctx.createLinearGradient(0, 0, 0, VH);
   g.addColorStop(0, th.sky[0]);
   g.addColorStop(1, th.sky[1]);
@@ -1454,6 +1519,20 @@ function drawTile(code, x, y, tx, ty, th) {
   }
 }
 
+/* 워프 파이프 위에 ▼ 표시 (들어갈 수 있다는 힌트) */
+function drawWarpMarks() {
+  if (!Level.warps) return;
+  var bob = Math.sin(worldT * 3) * 3;
+  for (var k in Level.warps) {
+    var tx = parseInt(k, 10);
+    var px = tx * TILE - camX + TILE;                  // 2칸짜리 파이프의 중앙
+    if (px < -40 || px > VW + 40) continue;
+    ctx.globalAlpha = 0.85;
+    text('\u25BC', px, Level.warps[k] * TILE - 14 + bob, 17, '#ffe36b', 'center');
+    ctx.globalAlpha = 1;
+  }
+}
+
 function drawCoin(cx, cy, phase) {
   var sx = Math.abs(Math.cos(phase));
   var w = 6 + 8 * sx;
@@ -1516,9 +1595,10 @@ function drawPlayer() {
 
   var squash = 0;
   if (!P.onGround && !P.dying) squash = P.vy < 0 ? -2 : 2;
+  if (P.duck) squash = -Math.round(sh * 0.3);          // 숙이면 납작하게
 
   ctx.save();
-  if (P.onGround && Math.abs(P.vx) > 8) {
+  if (P.onGround && !P.duck && Math.abs(P.vx) > 8) {
     var tilt = Math.sin(P.anim * 3.2) * 0.06;
     ctx.translate(dx + sw / 2, dy + sh);
     ctx.rotate(tilt);
@@ -1647,14 +1727,23 @@ function drawTitle() {
   text('SPACE 또는 화면을 눌러 시작', VW / 2, 322, 22, '#fff', 'center');
   ctx.globalAlpha = 1;
 
-  text(isTouch ? '◀ ▶ 이동 · A 점프(길게=높이) · B 달리기 · 오른쪽 위 버튼으로 일시정지/소리/전체화면'
-            : '←→ 이동 · SPACE 점프 · SHIFT 달리기 · P 일시정지 · M 소리',
+  text(isTouch ? '◀ ▶ 이동 · ▲/A 점프 · ▼ 숙이기·파이프 진입 · B 달리기'
+            : '←→ 이동 · SPACE 점프 · ↓ 숙이기·파이프 진입 · SHIFT 달리기 · P 일시정지',
        VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
-  text('블록을 아래에서 치고 · 굼바를 밟고 · 깃발까지 달려가세요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
+  text('블록을 아래에서 치고 · 굼바를 밟고 · ▼ 파이프로 보너스 코인방에 들어가 보세요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
   text('BEST ' + pad(best, 6), VW / 2, 430, 15, '#ffe9a8', 'center');
 }
 
 function drawOverlay() {
+  if (STATE === 'pipe') {
+    var a = stateT < 0.42 ? stateT / 0.42 : (0.84 - stateT) / 0.42;
+    dimScreen(Math.max(0, Math.min(1, a)));
+    return;
+  }
+  if (mainWorld && STATE === 'play') {
+    text('보너스 방 · 코인을 모으고 오른쪽 파이프에서 ' + (isTouch ? '\u25BC' : '\u2193') + ' 를 누르세요',
+         VW / 2, 60, 15, '#ffe9a8', 'center');
+  }
   if (paused && STATE === 'play') {
     dimScreen(0.5);
     text('일시정지', VW / 2, VH / 2 - 14, 44, '#fff', 'center');
@@ -1683,8 +1772,9 @@ function drawOverlay() {
 function render() {
   if (STATE === 'title') { drawTitle(); return; }
   drawBackground();
-  drawFlagAndCastle();
+  if (!Level.bonus) drawFlagAndCastle();
   drawTiles();
+  drawWarpMarks();
   drawParts();
   drawEntities();
   drawPlayer();
