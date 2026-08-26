@@ -148,7 +148,7 @@
   <div id="help">
     <b>&larr;&rarr; / A D</b> 이동 &nbsp;&middot;&nbsp; <b>Space / &uarr;</b> 점프(길게 누르면 높이) &nbsp;&middot;&nbsp;
     <b>&darr; / S</b> 숙이기 &middot; 파이프 진입 &nbsp;&middot;&nbsp;
-    <b>Shift</b> 달리기 &nbsp;&middot;&nbsp; <b>P</b> 일시정지 &nbsp;&middot;&nbsp; <b>R</b> 재시작 &nbsp;&middot;&nbsp; <b>M</b> 소리
+    <b>Shift / X</b> 달리기 &middot; 불꽃 발사 &nbsp;&middot;&nbsp; <b>P</b> 일시정지 &nbsp;&middot;&nbsp; <b>R</b> 재시작 &nbsp;&middot;&nbsp; <b>M</b> 소리
   </div>
 </div>
 <script>
@@ -246,6 +246,8 @@ var Snd = {
       case 'power':  this.seq([[N.C4,0,0.07],[N.E4,0.07,0.07],[N.G4,0.14,0.07],[N.C5,0.21,0.07],[N.E5,0.28,0.14]]); break;
       case 'shrink': this.seq([[N.G4,0,0.08],[N.E4,0.08,0.08],[N.C4,0.16,0.16]]); break;
       case 'life':   this.seq([[N.C5,0,0.09],[N.G5,0.09,0.09],[N.C6,0.18,0.22]]); break;
+      case 'fire':   this.seq([[N.G5, 0, 0.07, 'sawtooth', 0.16, N.C5],
+                                [N.C5, 0.05, 0.10, 'square', 0.13, N.G4]]); break;
       case 'pipe':   this.seq([[N.G4,0,0.09,'square',0.20],[N.E4,0.09,0.09,'square',0.20],
                                 [N.C4,0.18,0.24,'square',0.22,90]]); break;
       case 'start':  this.seq([[N.G4,0,0.09],[N.C5,0.09,0.09],[N.E5,0.18,0.20]]); break;
@@ -331,6 +333,27 @@ var ART = {
       "..KKWWK..KWWKK.."
     ]
   },
+  flower: {
+    pal: { K:'#2a1a06', G:'#3fa34d', R:'#e8412c', Y:'#ffd93b', W:'#fff6e8' },
+    px: [
+      "................",
+      "....KKKKKKKK....",
+      "...KRRRRRRRRK...",
+      "..KRWWRRRRWWRK..",
+      "..KRWWRRRRWWRK..",
+      ".KRRRRYYYYRRRRK.",
+      ".KRRRYYYYYYRRRK.",
+      ".KRRRRYYYYRRRRK.",
+      "..KRWWRRRRWWRK..",
+      "..KRWWRRRRWWRK..",
+      "...KRRRRRRRRK...",
+      "....KKGGGGKK....",
+      "......KGGK......",
+      "......KGGK......",
+      ".....KGGGGK.....",
+      "......KKKK......"
+    ]
+  },
   mushroom: {
     pal: { K:'#3a1608', R:'#e8412c', W:'#fff6e8', S:'#f2d9a8' },
     px: [
@@ -352,6 +375,12 @@ var ART = {
       "......KKKK......"
     ]
   }
+};
+
+// 불꽃 마리오: 같은 도트, 팔레트만 교체 (흰 상의 + 빨간 멜빵)
+ART.mario_fire = {
+  pal: { R:'#fdfdfd', S:'#f7bf8f', B:'#5c2c06', K:'#101010', O:'#d92b1c' },
+  px: ART.mario.px
 };
 
 var spriteCache = {};
@@ -641,7 +670,7 @@ var bumps = [];      // 블록 튕김 애니메이션
 
 var P = {
   x: 0, y: 0, w: 22, h: 28, vx: 0, vy: 0,
-  onGround: false, face: 1, big: false, invuln: 0, duck: false,
+  onGround: false, face: 1, big: false, fire: false, invuln: 0, duck: false,
   anim: 0, jumpHeld: false, dying: false, noClip: false, coyote: 0, jumpBuf: 0
 };
 
@@ -680,6 +709,14 @@ function setSize(big) {
 function makeGoomba(x, y) {
   return { type: 'goomba', x: x, y: y, w: 26, h: 26, vx: -48, vy: 0,
            active: false, dead: false, deadT: 0, onGround: false, anim: 0 };
+}
+function makeFlower(x, y) {
+  return { type: 'flower', x: x, y: y, w: 24, h: 24, vx: 0, vy: 0,
+           active: true, dead: false, onGround: false, spawnT: 0.35, anim: 0 };
+}
+function makeFireball(x, y, dir) {
+  return { type: 'fireball', x: x, y: y, w: 12, h: 12, vx: dir * 330, vy: 80,
+           active: true, dead: false, onGround: false, life: 2.4, anim: 0 };
 }
 function makeMushroom(x, y) {
   return { type: 'mushroom', x: x, y: y, w: 24, h: 24, vx: 70, vy: -120,
@@ -766,7 +803,7 @@ function overlap(a, b) {
 var Keys = { left: false, right: false, jump: false, run: false, down: false };  // 최종 입력(키보드 + 터치)
 var KB   = { left: false, right: false, jump: false, run: false, down: false };  // 키보드 상태
 var PAD  = { left: false, right: false, jump: false, run: false, down: false };  // 터치 패드 상태
-var jumpPressed = false, downPressed = false;
+var jumpPressed = false, downPressed = false, runPressed = false;
 var KMAP = {
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
@@ -791,6 +828,7 @@ function syncKeys() {
     var v = !!(KB[k] || PAD[k]);
     if (k === 'jump' && v && !Keys.jump) jumpPressed = true;
     if (k === 'down' && v && !Keys.down) downPressed = true;
+    if (k === 'run' && v && !Keys.run) runPressed = true;
     Keys[k] = v;
   }
 }
@@ -804,7 +842,7 @@ function anyStart() {
   Snd.init(); Snd.resume();
   if (STATE === 'title') {
     score = 0; coins = 0; lives = START_LIVES;
-    P.big = false;
+    P.big = false; P.fire = false;
     Snd.sfx('start');
     loadLevel(0);
   } else if (STATE === 'over' || STATE === 'win') {
@@ -936,7 +974,7 @@ function toggleSound() {
 function restartGame() {
   Snd.init(); Snd.resume();
   score = 0; coins = 0; lives = START_LIVES;
-  P.big = false; paused = false;
+  P.big = false; P.fire = false; paused = false;
   loadLevel(0);
 }
 function lockLandscape() {
@@ -1042,7 +1080,9 @@ P.onHead = function (tx, ty) {
     Level.tiles[ty][tx] = T_USED;
     bumpBlock(tx, ty);
     if (what === 'mush') {
-      entities.push(makeMushroom(tx * TILE + 4, ty * TILE - 24));
+      // 작을 때는 버섯, 이미 커진 상태면 파이어플라워가 나온다
+      if (P.big || P.fire) entities.push(makeFlower(tx * TILE + 4, ty * TILE - 24));
+      else entities.push(makeMushroom(tx * TILE + 4, ty * TILE - 24));
       Snd.sfx('power');
     } else {
       coins++; addScore(200, tx * TILE, ty * TILE - 10);
@@ -1071,8 +1111,21 @@ function checkExtraLife() {
 
 function playerHurt() {
   if (P.invuln > 0 || P.dying) return;
-  if (P.big) { setSize(false); P.invuln = 1.8; Snd.sfx('shrink'); }
+  if (P.fire) { P.fire = false; P.invuln = 1.8; Snd.sfx('shrink'); }
+  else if (P.big) { setSize(false); P.invuln = 1.8; Snd.sfx('shrink'); }
   else killPlayer();
+}
+
+/* 불꽃 발사. 실제 게임처럼 달리기 버튼(B / Shift)을 누를 때 나가고
+   화면에 동시에 2개까지만 존재한다. */
+function shootFire() {
+  if (!P.fire || P.dying || P.duck) return;
+  var n = 0;
+  for (var i = 0; i < entities.length; i++) if (entities[i].type === 'fireball') n++;
+  if (n >= 2) return;
+  entities.push(makeFireball(P.face > 0 ? P.x + P.w - 2 : P.x - 10,
+                             P.y + P.h * 0.3, P.face));
+  Snd.sfx('fire');
 }
 
 function killPlayer() {
@@ -1166,6 +1219,8 @@ function updatePlayer(dt) {
   if (P.x < 0) { P.x = 0; if (P.vx < 0) P.vx = 0; }
   if (P.x + P.w > Level.w * TILE) { P.x = Level.w * TILE - P.w; P.vx = 0; }
 
+  if (runPressed) shootFire();
+
   // 워프 파이프 위에서 아래 방향키를 누르면 보너스 방으로 (방 안에서는 밖으로)
   if (downPressed && warpPipeAt() >= 0) { startPipe(); return; }
 
@@ -1244,6 +1299,39 @@ function updateEntities(dt) {
           playerHurt();
         }
       }
+    } else if (e.type === 'flower') {
+      e.anim += dt;
+      if (e.spawnT > 0) { e.spawnT -= dt; e.y -= 42 * dt; }   // 블록에서 솟아오름
+      if (!P.dying && overlap(P, e)) {
+        entities.splice(i, 1);
+        if (!P.big) setSize(true);
+        P.fire = true;
+        addScore(1000, e.x, e.y - 8);
+        Snd.sfx('power');
+        continue;
+      }
+
+    } else if (e.type === 'fireball') {
+      e.anim += dt;
+      e.life -= dt;
+      moveBody(e, dt, 0.55);
+      if (e.onGround) e.vy = -250;                            // 땅에 튕김
+      var gone = (e.hitWall || e.life <= 0 || e.y > VH + 40 ||
+                  e.x < camX - 90 || e.x > camX + VW + 90);
+      if (!gone) {
+        for (var fj = entities.length - 1; fj >= 0; fj--) {
+          var tg = entities[fj];
+          if (tg !== e && tg.type === 'goomba' && !tg.dead && overlap(e, tg)) {
+            tg.dead = true; tg.deadT = 0; tg.vx = 0;
+            addScore(200, tg.x, tg.y - 8);
+            Snd.sfx('stomp');
+            gone = true;
+            break;
+          }
+        }
+      }
+      if (gone) { entities.splice(i, 1); continue; }
+
     } else if (e.type === 'mushroom') {
       if (e.spawnT > 0) {
         e.spawnT -= dt;
@@ -1286,8 +1374,8 @@ function update(dt) {
   worldT += dt;
   Snd.tick();
 
-  if (STATE === 'title' || STATE === 'over' || STATE === 'win') { jumpPressed = downPressed = false; return; }
-  if (paused) { jumpPressed = downPressed = false; return; }
+  if (STATE === 'title' || STATE === 'over' || STATE === 'win') { jumpPressed = downPressed = runPressed = false; return; }
+  if (paused) { jumpPressed = downPressed = runPressed = false; return; }
 
   stateT += dt;
 
@@ -1311,7 +1399,7 @@ function update(dt) {
     if (stateT > 2.2) {
       lives--;
       if (lives < 0) { STATE = 'over'; stateT = 0; Snd.musicStop(); }
-      else { P.big = false; resetLevel(); }
+      else { P.big = false; P.fire = false; resetLevel(); }
     }
   } else if (STATE === 'pipe') {
     if (!pipeSwapped) {
@@ -1334,6 +1422,7 @@ function update(dt) {
 
   jumpPressed = false;
   downPressed = false;
+  runPressed = false;
 }
 
 /* ============================================================
@@ -1589,7 +1678,7 @@ function drawFlagAndCastle() {
 function drawPlayer() {
   if (P.invuln > 0 && Math.floor(P.invuln * 14) % 2 === 0) return;
   var sw = P.w + 8, sh = P.h + 2;
-  var img = sprite('mario', sw, sh, P.face < 0);
+  var img = sprite(P.fire ? 'mario_fire' : 'mario', sw, sh, P.face < 0);
   var dx = Math.round(P.x - camX - 4);
   var dy = Math.round(P.y + P.h - sh);
 
@@ -1629,6 +1718,21 @@ function drawEntities() {
       }
     } else if (e.type === 'mushroom') {
       ctx.drawImage(sprite('mushroom', e.w, e.h, false), ex, ey);
+
+    } else if (e.type === 'flower') {
+      ctx.drawImage(sprite('flower', e.w, e.h, false),
+                    ex, ey + Math.round(Math.sin(e.anim * 5) * 1.5));
+
+    } else if (e.type === 'fireball') {
+      var r = e.w / 2;
+      ctx.save();
+      ctx.translate(ex + r, ey + r);
+      ctx.rotate(e.anim * 16);
+      ctx.fillStyle = '#ff7a12';
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffe36b';
+      ctx.beginPath(); ctx.arc(-r * 0.28, -r * 0.28, r * 0.52, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
   }
 }
@@ -1727,10 +1831,10 @@ function drawTitle() {
   text('SPACE 또는 화면을 눌러 시작', VW / 2, 322, 22, '#fff', 'center');
   ctx.globalAlpha = 1;
 
-  text(isTouch ? '◀ ▶ 이동 · ▲/A 점프 · ▼ 숙이기·파이프 진입 · B 달리기'
-            : '←→ 이동 · SPACE 점프 · ↓ 숙이기·파이프 진입 · SHIFT 달리기 · P 일시정지',
+  text(isTouch ? '◀ ▶ 이동 · ▲/A 점프 · ▼ 숙이기·파이프 · B 달리기·불꽃'
+            : '←→ 이동 · SPACE 점프 · ↓ 숙이기·파이프 · SHIFT 달리기·불꽃 발사',
        VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
-  text('블록을 아래에서 치고 · 굼바를 밟고 · ▼ 파이프로 보너스 코인방에 들어가 보세요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
+  text('버섯으로 커지고 · 커진 뒤 ? 블록에서 나오는 꽃을 먹으면 불꽃을 쏠 수 있어요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
   text('BEST ' + pad(best, 6), VW / 2, 430, 15, '#ffe9a8', 'center');
 }
 
