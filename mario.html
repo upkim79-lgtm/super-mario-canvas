@@ -199,8 +199,10 @@ var BASS = [
   N.C3,N.C3,N.E3,N.E3, N.G3,N.G3,N.C3,N.C3
 ].map(function (f) { return [f, 2]; });
 
+var MUSIC_UNIT = 0.135;
+
 var Snd = {
-  ctx: null, master: null, on: true, playing: false, unit: 0.135, tracks: null,
+  ctx: null, master: null, on: true, playing: false, unit: MUSIC_UNIT, tracks: null,
   init: function () {
     if (this.ctx) return;
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -246,6 +248,8 @@ var Snd = {
       case 'power':  this.seq([[N.C4,0,0.07],[N.E4,0.07,0.07],[N.G4,0.14,0.07],[N.C5,0.21,0.07],[N.E5,0.28,0.14]]); break;
       case 'shrink': this.seq([[N.G4,0,0.08],[N.E4,0.08,0.08],[N.C4,0.16,0.16]]); break;
       case 'life':   this.seq([[N.C5,0,0.09],[N.G5,0.09,0.09],[N.C6,0.18,0.22]]); break;
+      case 'star':   this.seq([[N.C5,0,0.07],[N.E5,0.07,0.07],[N.G5,0.14,0.07],
+                                [N.C6,0.21,0.07],[N.E6,0.28,0.07],[N.G5,0.35,0.18,'square',0.24]]); break;
       case 'fire':   this.seq([[N.G5, 0, 0.07, 'sawtooth', 0.16, N.C5],
                                 [N.C5, 0.05, 0.10, 'square', 0.13, N.G4]]); break;
       case 'pipe':   this.seq([[N.G4,0,0.09,'square',0.20],[N.E4,0.09,0.09,'square',0.20],
@@ -333,6 +337,60 @@ var ART = {
       "..KKWWK..KWWKK.."
     ]
   },
+  koopa: {
+    pal: { K:'#12240f', G:'#3fbf5a', L:'#7ef58f', Y:'#ffe36b', W:'#ffffff', S:'#f2d06a' },
+    px: [
+      "................",
+      "..........KKK...",
+      ".........KWWGK..",
+      "........KGWWGGK.",
+      "....KKKKKGGGGGK.",
+      "..KKGGGGGKGGGGK.",
+      ".KGGYYGGGGKKKK..",
+      "KGGYYYYGGGGK....",
+      "KGYYYYYYGGGK....",
+      "KGGYYYYGGGGK....",
+      ".KGGYYGGGGGK....",
+      "..KKGGGGGGGK....",
+      "....KKKKKKK.....",
+      "...KSSK.KSSK....",
+      "...KSSK.KSSK....",
+      "...KKKK.KKKK...."
+    ]
+  },
+  shell: {
+    pal: { K:'#12240f', G:'#3fbf5a', Y:'#ffe36b' },
+    px: [
+      "....KKKKKKKK....",
+      "..KKGGGGGGGGKK..",
+      ".KGGYYGGGGYYGGK.",
+      "KGGYYYYGGYYYYGGK",
+      "KGYYYYYYYYYYYYGK",
+      "KGGYYYYGGYYYYGGK",
+      "KGGGYYGGGGYYGGGK",
+      "KGGGGGGGGGGGGGGK",
+      ".KGGGGGGGGGGGGK.",
+      "..KKGGGGGGGGKK..",
+      "....KKKKKKKK...."
+    ]
+  },
+  star: {
+    pal: { K:'#8a6410', Y:'#ffd93b', W:'#fff6e8' },
+    px: [
+      ".......KK.......",
+      "......KYYK......",
+      "......KYYK......",
+      "KKKKKKKYYKKKKKKK",
+      "KYYYYYYWWYYYYYYK",
+      ".KYYYYYWWYYYYYK.",
+      "..KYYYYYYYYYYK..",
+      "...KYYYYYYYYK...",
+      "...KYYYYYYYYK...",
+      "..KYYYK..KYYYK..",
+      "..KYYK....KYYK..",
+      "..KKK......KKK.."
+    ]
+  },
   flower: {
     pal: { K:'#2a1a06', G:'#3fa34d', R:'#e8412c', Y:'#ffd93b', W:'#fff6e8' },
     px: [
@@ -382,6 +440,12 @@ ART.mario_fire = {
   pal: { R:'#fdfdfd', S:'#f7bf8f', B:'#5c2c06', K:'#101010', O:'#d92b1c' },
   px: ART.mario.px
 };
+
+// 무적 스타: 팔레트만 바꿔 번쩍이게 한다
+ART.mario_star1 = { pal: { R:'#ffe36b', S:'#fff6e8', B:'#5c2c06', K:'#101010', O:'#ffffff' }, px: ART.mario.px };
+ART.mario_star2 = { pal: { R:'#7dff8a', S:'#fff6e8', B:'#5c2c06', K:'#101010', O:'#2bd94f' }, px: ART.mario.px };
+ART.mario_star3 = { pal: { R:'#8ab6ff', S:'#fff6e8', B:'#5c2c06', K:'#101010', O:'#2a52d0' }, px: ART.mario.px };
+var STAR_SKINS = ['mario_star1', 'mario_star2', 'mario_star3', 'mario_fire'];
 
 var spriteCache = {};
 function sprite(name, w, h, flip) {
@@ -463,7 +527,7 @@ var LEVELS = [
       { t: 'goomba', x: 64 },
       { t: 'coin', x: 68, y: 9, n: 3 },
       { t: 'brick', x: 74, y: 9, n: 2 },
-      { t: 'q', x: 76, y: 9, item: 'coin' },
+      { t: 'q', x: 76, y: 9, item: 'star' },
       { t: 'brick', x: 77, y: 9, n: 2 },
       { t: 'goomba', x: 80 }, { t: 'goomba', x: 82 },
       { t: 'coin', x: 86, y: 9, n: 3 },
@@ -486,6 +550,8 @@ var LEVELS = [
       { t: 'q', x: 160, y: 9, item: 'coin' },
       { t: 'goomba', x: 163 }, { t: 'goomba', x: 166 },
       { t: 'stair', x: 172, h: 8 },
+      { t: 'koopa', x: 34 }, { t: 'koopa', x: 58 }, { t: 'koopa', x: 96 },
+      { t: 'koopa', x: 130 }, { t: 'koopa', x: 166 },
       { t: 'flag', x: 190 }
     ]
   },
@@ -515,7 +581,7 @@ var LEVELS = [
       { t: 'coin', x: 95, y: 9, n: 3 },
       { t: 'pipe', x: 101, h: 3 },
       { t: 'brick', x: 106, y: 9, n: 6 },
-      { t: 'q', x: 108, y: 9, item: 'coin' },
+      { t: 'q', x: 108, y: 9, item: 'star' },
       { t: 'q', x: 110, y: 9, item: 'mush' },
       { t: 'goomba', x: 113 },
       { t: 'coin', x: 120, y: 8, n: 3 },
@@ -532,6 +598,8 @@ var LEVELS = [
       { t: 'q', x: 169, y: 9, item: 'coin' },
       { t: 'goomba', x: 172 }, { t: 'goomba', x: 174 }, { t: 'goomba', x: 177 },
       { t: 'stair', x: 183, h: 7 },
+      { t: 'koopa', x: 22 }, { t: 'koopa', x: 57 }, { t: 'koopa', x: 92 },
+      { t: 'koopa', x: 116 }, { t: 'koopa', x: 158 },
       { t: 'flag', x: 196 }
     ]
   },
@@ -552,7 +620,7 @@ var LEVELS = [
       { t: 'coin', x: 48, y: 8, n: 4 },
       { t: 'stone', x: 54, y: 10, w: 2, h: 1 },
       { t: 'brick', x: 56, y: 7, n: 6 },
-      { t: 'q', x: 58, y: 7, item: 'coin' },
+      { t: 'q', x: 58, y: 7, item: 'star' },
       { t: 'goomba', x: 59 }, { t: 'goomba', x: 62 },
       { t: 'coin', x: 70, y: 9, n: 3 },
       { t: 'pipe', x: 76, h: 3, warp: true },
@@ -579,6 +647,8 @@ var LEVELS = [
       { t: 'brick', x: 184, y: 9, n: 4 },
       { t: 'q', x: 186, y: 9, item: 'coin' },
       { t: 'stair', x: 193, h: 8 },
+      { t: 'koopa', x: 21 }, { t: 'koopa', x: 40 }, { t: 'koopa', x: 66 },
+      { t: 'koopa', x: 104 }, { t: 'koopa', x: 155 },
       { t: 'flag', x: 206 }
     ]
   }
@@ -643,6 +713,9 @@ function buildLevel(def) {
       case 'goomba':
         spawns.push({ type: 'goomba', tx: it.x, ty: it.y === undefined ? 12 : it.y });
         break;
+      case 'koopa':
+        spawns.push({ type: 'koopa', tx: it.x, ty: it.y === undefined ? 12 : it.y });
+        break;
       case 'flag':
         flagX = it.x;
         break;
@@ -670,7 +743,7 @@ var bumps = [];      // 블록 튕김 애니메이션
 
 var P = {
   x: 0, y: 0, w: 22, h: 28, vx: 0, vy: 0,
-  onGround: false, face: 1, big: false, fire: false, invuln: 0, duck: false,
+  onGround: false, face: 1, big: false, fire: false, star: 0, invuln: 0, duck: false,
   anim: 0, jumpHeld: false, dying: false, noClip: false, coyote: 0, jumpBuf: 0
 };
 
@@ -687,16 +760,23 @@ function resetLevel() {
   entities = []; parts = []; bumps = [];
   for (var i = 0; i < Level.spawns.length; i++) {
     var s = Level.spawns[i];
-    entities.push(makeGoomba(s.tx * TILE + 3, s.ty * TILE + (TILE - 26)));
+    if (s.type === 'koopa') entities.push(makeKoopa(s.tx * TILE + 4, s.ty * TILE + (TILE - 30)));
+    else entities.push(makeGoomba(s.tx * TILE + 3, s.ty * TILE + (TILE - 26)));
   }
   P.x = 3 * TILE; P.y = 11 * TILE; P.vx = 0; P.vy = 0;
   P.face = 1; P.invuln = 0; P.dying = false; P.noClip = false; P.anim = 0;
   P.coyote = 0; P.jumpBuf = 0; P.jumpHeld = false; P.duck = false;
+  starOff();
   setSize(P.big);
   camX = 0; gameTime = START_TIME; stateT = 0;
   STATE = 'play'; paused = false;
   Snd.musicStart();
 }
+
+/* 무적 스타. 지속 동안 적과 부딪히면 적이 죽고, 배경음악이 빨라진다. */
+var STAR_TIME = 10;
+function starOn() { P.star = STAR_TIME; Snd.unit = 0.085; }
+function starOff() { P.star = 0; Snd.unit = MUSIC_UNIT; }
 
 function setSize(big) {
   P.big = big;
@@ -709,6 +789,18 @@ function setSize(big) {
 function makeGoomba(x, y) {
   return { type: 'goomba', x: x, y: y, w: 26, h: 26, vx: -48, vy: 0,
            active: false, dead: false, deadT: 0, onGround: false, anim: 0 };
+}
+function makeKoopa(x, y) {
+  return { type: 'koopa', x: x, y: y, w: 24, h: 30, vx: -42, vy: 0,
+           active: false, dead: false, deadT: 0, onGround: false, anim: 0 };
+}
+function makeShell(x, y) {
+  return { type: 'shell', x: x, y: y, w: 24, h: 22, vx: 0, vy: 0,
+           active: true, dead: false, deadT: 0, onGround: false, anim: 0, kick: 0 };
+}
+function makeStar(x, y) {
+  return { type: 'star', x: x, y: y, w: 22, h: 22, vx: 95, vy: -170,
+           active: true, dead: false, onGround: false, spawnT: 0.35, anim: 0 };
 }
 function makeFlower(x, y) {
   return { type: 'flower', x: x, y: y, w: 24, h: 24, vx: 0, vy: 0,
@@ -1084,6 +1176,9 @@ P.onHead = function (tx, ty) {
       if (P.big || P.fire) entities.push(makeFlower(tx * TILE + 4, ty * TILE - 24));
       else entities.push(makeMushroom(tx * TILE + 4, ty * TILE - 24));
       Snd.sfx('power');
+    } else if (what === 'star') {
+      entities.push(makeStar(tx * TILE + 5, ty * TILE - 22));
+      Snd.sfx('power');
     } else {
       coins++; addScore(200, tx * TILE, ty * TILE - 10);
       addCoinPop(tx * TILE + 8, ty * TILE - 6);
@@ -1110,7 +1205,7 @@ function checkExtraLife() {
 }
 
 function playerHurt() {
-  if (P.invuln > 0 || P.dying) return;
+  if (P.invuln > 0 || P.dying || P.star > 0) return;
   if (P.fire) { P.fire = false; P.invuln = 1.8; Snd.sfx('shrink'); }
   else if (P.big) { setSize(false); P.invuln = 1.8; Snd.sfx('shrink'); }
   else killPlayer();
@@ -1128,8 +1223,16 @@ function shootFire() {
   Snd.sfx('fire');
 }
 
+/* 무적 상태로 적을 밀어버릴 때의 공통 처리 */
+function starKill(e) {
+  e.dead = true; e.deadT = 0; e.vx = 0;
+  addScore(200, e.x, e.y - 8);
+  Snd.sfx('stomp');
+}
+
 function killPlayer() {
   if (P.dying) return;
+  starOff();
   P.dying = true; P.noClip = true;
   P.vy = -520; P.vx = 0;
   STATE = 'dead'; stateT = 0;
@@ -1230,6 +1333,7 @@ function updatePlayer(dt) {
   else P.anim = 0;
 
   if (P.invuln > 0) P.invuln -= dt;
+  if (P.star > 0) { P.star -= dt; if (P.star <= 0) starOff(); }
 
   // 코인 획득
   var x1 = Math.floor(P.x / TILE), x2 = Math.floor((P.x + P.w - 1) / TILE);
@@ -1289,6 +1393,7 @@ function updateEntities(dt) {
       if (e.y > VH + 60) { entities.splice(i, 1); continue; }
 
       if (!P.dying && overlap(P, e)) {
+        if (P.star > 0) { starKill(e); continue; }
         var stomp = P.vy > 60 && (P.y + P.h) - e.y < 20;
         if (stomp) {
           e.dead = true; e.deadT = 0;
@@ -1299,6 +1404,84 @@ function updateEntities(dt) {
           playerHurt();
         }
       }
+    } else if (e.type === 'koopa') {
+      e.anim += dt;
+      moveBody(e, dt);
+      if (e.hitWall) e.vx = -e.vx;
+      if (e.y > VH + 60) { entities.splice(i, 1); continue; }
+
+      if (!P.dying && overlap(P, e)) {
+        if (P.star > 0) { starKill(e); continue; }
+        if (P.vy > 60 && (P.y + P.h) - e.y < 22) {
+          // 밟으면 껍질만 남는다
+          entities.splice(i, 1);
+          entities.push(makeShell(e.x, e.y + e.h - 22));
+          P.vy = -360; P.jumpHeld = false;
+          addScore(100, e.x, e.y - 8);
+          Snd.sfx('stomp');
+          continue;
+        }
+        playerHurt();
+      }
+
+    } else if (e.type === 'shell') {
+      e.anim += dt;
+      if (e.kick > 0) e.kick -= dt;
+      moveBody(e, dt);
+      if (e.hitWall) e.vx = -e.vx;
+      if (e.y > VH + 60) { entities.splice(i, 1); continue; }
+
+      // 굴러가는 껍질은 다른 적을 쓸어버린다
+      if (e.vx !== 0) {
+        for (var sj = entities.length - 1; sj >= 0; sj--) {
+          var sv = entities[sj];
+          if (sv !== e && !sv.dead && (sv.type === 'goomba' || sv.type === 'koopa') && overlap(e, sv)) {
+            sv.dead = true; sv.deadT = 0; sv.vx = 0;
+            addScore(200, sv.x, sv.y - 8);
+            Snd.sfx('stomp');
+          }
+        }
+      }
+
+      if (!P.dying && overlap(P, e)) {
+        if (P.star > 0) {
+          entities.splice(i, 1);
+          addScore(200, e.x, e.y - 8);
+          Snd.sfx('stomp');
+          continue;
+        }
+        if (P.vy > 60 && (P.y + P.h) - e.y < 22) {
+          e.vx = 0; e.kick = 0.15;                  // 밟으면 멈춘다
+          P.vy = -320; P.jumpHeld = false;
+          Snd.sfx('stomp');
+        } else if (e.vx === 0) {
+          // 멈춰 있는 껍질을 옆에서 건드리면 발로 찬다
+          e.vx = (P.x + P.w / 2 < e.x + e.w / 2) ? 330 : -330;
+          e.kick = 0.2;
+          addScore(400, e.x, e.y - 8);
+          Snd.sfx('stomp');
+        } else if (e.kick <= 0) {
+          playerHurt();                             // 굴러오는 껍질에 맞으면 피해
+        }
+      }
+
+    } else if (e.type === 'star') {
+      e.anim += dt;
+      if (e.spawnT > 0) { e.spawnT -= dt; e.y -= 42 * dt; }
+      else {
+        moveBody(e, dt);
+        if (e.onGround) e.vy = -330;                // 통통 튀어다닌다
+        if (e.hitWall) e.vx = -e.vx;
+      }
+      if (e.y > VH + 60) { entities.splice(i, 1); continue; }
+      if (!P.dying && overlap(P, e)) {
+        entities.splice(i, 1);
+        starOn();
+        addScore(1000, e.x, e.y - 8);
+        Snd.sfx('star');
+        continue;
+      }
+
     } else if (e.type === 'flower') {
       e.anim += dt;
       if (e.spawnT > 0) { e.spawnT -= dt; e.y -= 42 * dt; }   // 블록에서 솟아오름
@@ -1321,7 +1504,7 @@ function updateEntities(dt) {
       if (!gone) {
         for (var fj = entities.length - 1; fj >= 0; fj--) {
           var tg = entities[fj];
-          if (tg !== e && tg.type === 'goomba' && !tg.dead && overlap(e, tg)) {
+          if (tg !== e && !tg.dead && (tg.type === 'goomba' || tg.type === 'koopa') && overlap(e, tg)) {
             tg.dead = true; tg.deadT = 0; tg.vx = 0;
             addScore(200, tg.x, tg.y - 8);
             Snd.sfx('stomp');
@@ -1678,7 +1861,9 @@ function drawFlagAndCastle() {
 function drawPlayer() {
   if (P.invuln > 0 && Math.floor(P.invuln * 14) % 2 === 0) return;
   var sw = P.w + 8, sh = P.h + 2;
-  var img = sprite(P.fire ? 'mario_fire' : 'mario', sw, sh, P.face < 0);
+  var skin = P.fire ? 'mario_fire' : 'mario';
+  if (P.star > 0) skin = STAR_SKINS[Math.floor(worldT * 16) % STAR_SKINS.length];
+  var img = sprite(skin, sw, sh, P.face < 0);
   var dx = Math.round(P.x - camX - 4);
   var dy = Math.round(P.y + P.h - sh);
 
@@ -1716,6 +1901,36 @@ function drawEntities() {
         var flip = Math.floor(e.anim * 5) % 2 === 0;
         ctx.drawImage(sprite('goomba', e.w + 2, e.h + 2, flip), ex - 1, ey - 2);
       }
+    } else if (e.type === 'koopa') {
+      if (e.dead) {
+        var kk = Math.min(e.deadT / 0.45, 1);
+        var kh = e.h * (1 - 0.75 * kk);
+        ctx.globalAlpha = 1 - kk * 0.5;
+        ctx.drawImage(sprite('koopa', e.w, Math.max(4, kh), false), ex, ey + (e.h - kh));
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.drawImage(sprite('koopa', e.w, e.h, e.vx > 0), ex, ey);
+      }
+
+    } else if (e.type === 'shell') {
+      var sr = sprite('shell', e.w, e.h, false);
+      if (e.vx !== 0) {
+        ctx.save();
+        ctx.translate(ex + e.w / 2, ey + e.h / 2);
+        ctx.rotate(e.anim * (e.vx > 0 ? 11 : -11));
+        ctx.drawImage(sr, -e.w / 2, -e.h / 2, e.w, e.h);
+        ctx.restore();
+      } else {
+        ctx.drawImage(sr, ex, ey);
+      }
+
+    } else if (e.type === 'star') {
+      ctx.save();
+      ctx.translate(ex + e.w / 2, ey + e.h / 2);
+      ctx.rotate(Math.sin(e.anim * 5) * 0.35);
+      ctx.drawImage(sprite('star', e.w, e.h, false), -e.w / 2, -e.h / 2, e.w, e.h);
+      ctx.restore();
+
     } else if (e.type === 'mushroom') {
       ctx.drawImage(sprite('mushroom', e.w, e.h, false), ex, ey);
 
@@ -1834,7 +2049,7 @@ function drawTitle() {
   text(isTouch ? '◀ ▶ 이동 · ▲/A 점프 · ▼ 숙이기·파이프 · B 달리기·불꽃'
             : '←→ 이동 · SPACE 점프 · ↓ 숙이기·파이프 · SHIFT 달리기·불꽃 발사',
        VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
-  text('버섯으로 커지고 · 커진 뒤 ? 블록에서 나오는 꽃을 먹으면 불꽃을 쏠 수 있어요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
+  text('꽃을 먹으면 불꽃 발사 · 거북이는 밟아서 껍질을 차고 · 스타를 먹으면 잠시 무적', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
   text('BEST ' + pad(best, 6), VW / 2, 430, 15, '#ffe9a8', 'center');
 }
 
