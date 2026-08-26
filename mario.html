@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>슈퍼 마리오 - HTML 캔버스 게임</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #101425;
+    font-family: "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+  }
+  canvas {
+    display: block;
+    width: min(100vw, calc(100vh * 5 / 3));
+    height: auto;
+    max-height: 88vh;
+    aspect-ratio: 5 / 3;
+    background: #6ab7ff;
+    border: 3px solid #2a2f4a;
+    border-radius: 6px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.55);
+    image-rendering: pixelated;
+    touch-action: none;
+  }
+  #help {
+    color: #8c93b8; font-size: 13px; text-align: center;
+    line-height: 1.6; padding: 0 12px;
+  }
+  #help b { color: #d7dcff; }
+  #pad {
+    display: none;
+    width: min(100vw, 640px);
+    justify-content: space-between;
+    padding: 0 14px;
+    user-select: none;
+  }
+  #pad .side { display: flex; gap: 12px; }
+  #pad button {
+    width: 68px; height: 68px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.12);
+    color: #fff; font-size: 22px; font-weight: 700;
+    touch-action: none;
+  }
+  #pad button:active { background: rgba(255,255,255,.32); }
+  @media (hover: none) and (pointer: coarse) {
+    #pad { display: flex; }
+    #help { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="800" height="480"></canvas>
+  <div id="pad">
+    <div class="side">
+      <button data-k="left">&#9664;</button>
+      <button data-k="right">&#9654;</button>
+    </div>
+    <div class="side">
+      <button data-k="run">B</button>
+      <button data-k="jump">A</button>
+    </div>
+  </div>
+  <div id="help">
+    <b>&larr;&rarr; / A D</b> 이동 &nbsp;&middot;&nbsp; <b>Space / &uarr;</b> 점프(길게 누르면 높이) &nbsp;&middot;&nbsp;
+    <b>Shift</b> 달리기 &nbsp;&middot;&nbsp; <b>P</b> 일시정지 &nbsp;&middot;&nbsp; <b>R</b> 재시작 &nbsp;&middot;&nbsp; <b>M</b> 소리
+  </div>
+</div>
+<script>
+(function () {
+'use strict';
+
+/* ============================================================
+   상수
+   ============================================================ */
+var TILE = 32, VW = 800, VH = 480, ROWS = 15;
+var GRAV = 2100, MAXFALL = 780;
+var ACC = 1350, FRIC = 1600, MAXWALK = 175, MAXRUN = 295;
+var JUMP = -600, HOLD_SCALE = 0.55;
+var START_LIVES = 3, START_TIME = 400;
+
+// 타일 코드
+var T_EMPTY = 0, T_GROUND = 1, T_BRICK = 2, T_QUESTION = 3,
+    T_USED = 4, T_PIPE_TOP = 5, T_PIPE = 6, T_COIN = 7, T_STONE = 10;
+var SOLID = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 10: 1 };
+
+var canvas = document.getElementById('game');
+var ctx = canvas.getContext('2d', { alpha: false });
+ctx.imageSmoothingEnabled = false;
+
+/* ============================================================
+   사운드 (WebAudio · 외부 파일 없음)
+   ============================================================ */
+var N = {
+  C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00, A3:220.00, B3:246.94,
+  C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392.00, A4:440.00, B4:493.88,
+  C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880.00, B5:987.77,
+  C6:1046.50, E6:1318.51
+};
+var MELODY = [
+  [N.E5,1],[N.G5,1],[N.C6,2],[N.B5,1],[N.G5,1],[N.E5,2],
+  [N.F5,1],[N.A5,1],[N.C6,2],[N.A5,2],[N.F5,2],
+  [N.G5,1],[N.B5,1],[N.C6,2],[N.B5,1],[N.A5,1],[N.G5,2],
+  [N.E5,2],[N.G5,2],[N.C6,3],[0,1],
+  [N.C6,1],[N.B5,1],[N.A5,2],[N.G5,1],[N.F5,1],[N.E5,2],
+  [N.D5,1],[N.E5,1],[N.F5,2],[N.G5,2],[N.A5,2],
+  [N.G5,1],[N.E5,1],[N.C5,2],[N.E5,1],[N.G5,1],[N.C6,2],
+  [N.B5,2],[N.G5,2],[N.E5,2],[0,2]
+];
+var BASS = [
+  N.C3,N.C3,N.G3,N.G3, N.F3,N.F3,N.C3,N.C3,
+  N.G3,N.G3,N.E3,N.E3, N.C3,N.C3,N.G3,N.G3,
+  N.A3,N.A3,N.E3,N.E3, N.F3,N.F3,N.G3,N.G3,
+  N.C3,N.C3,N.E3,N.E3, N.G3,N.G3,N.C3,N.C3
+].map(function (f) { return [f, 2]; });
+
+var Snd = {
+  ctx: null, master: null, on: true, playing: false, unit: 0.135, tracks: null,
+  init: function () {
+    if (this.ctx) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.4;
+    this.master.connect(this.ctx.destination);
+    this.tracks = [
+      { notes: MELODY, i: 0, next: 0, type: 'square',   vol: 0.16 },
+      { notes: BASS,   i: 0, next: 0, type: 'triangle', vol: 0.20 }
+    ];
+  },
+  resume: function () { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
+  note: function (freq, at, dur, type, vol, slideTo) {
+    if (!this.ctx || !this.on || !freq) return;
+    var o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type || 'square';
+    o.frequency.setValueAtTime(freq, at);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, at + dur);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(at); o.stop(at + dur + 0.03);
+  },
+  seq: function (list) {
+    if (!this.ctx || !this.on) return;
+    var t0 = this.ctx.currentTime;
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i];
+      this.note(s[0], t0 + s[1], s[2], s[3] || 'square', s[4] || 0.22, s[5]);
+    }
+  },
+  sfx: function (name) {
+    if (!this.ctx || !this.on) return;
+    switch (name) {
+      case 'jump':   this.seq([[400, 0, 0.16, 'square', 0.20, 780]]); break;
+      case 'coin':   this.seq([[N.B5, 0, 0.07, 'square', 0.22], [N.E6, 0.07, 0.16, 'square', 0.20]]); break;
+      case 'stomp':  this.seq([[220, 0, 0.10, 'square', 0.24, 90]]); break;
+      case 'bump':   this.seq([[150, 0, 0.08, 'square', 0.20, 110]]); break;
+      case 'break':  this.seq([[300, 0, 0.06, 'sawtooth', 0.18, 120], [180, 0.06, 0.12, 'sawtooth', 0.14, 70]]); break;
+      case 'power':  this.seq([[N.C4,0,0.07],[N.E4,0.07,0.07],[N.G4,0.14,0.07],[N.C5,0.21,0.07],[N.E5,0.28,0.14]]); break;
+      case 'shrink': this.seq([[N.G4,0,0.08],[N.E4,0.08,0.08],[N.C4,0.16,0.16]]); break;
+      case 'life':   this.seq([[N.C5,0,0.09],[N.G5,0.09,0.09],[N.C6,0.18,0.22]]); break;
+      case 'start':  this.seq([[N.G4,0,0.09],[N.C5,0.09,0.09],[N.E5,0.18,0.20]]); break;
+      case 'die':
+        this.musicStop();
+        this.seq([[N.B4,0,0.12],[N.F4,0.14,0.12],[N.D4,0.28,0.12],[N.B3,0.42,0.30,'square',0.24,110]]);
+        break;
+      case 'clear':
+        this.musicStop();
+        this.seq([[N.C5,0,0.13],[N.E5,0.13,0.13],[N.G5,0.26,0.13],[N.C6,0.39,0.13],
+                  [N.G5,0.52,0.13],[N.C6,0.65,0.42,'square',0.24]]);
+        break;
+    }
+  },
+  musicStart: function () {
+    if (!this.ctx) return;
+    this.playing = true;
+    for (var i = 0; i < this.tracks.length; i++) {
+      this.tracks[i].i = 0;
+      this.tracks[i].next = this.ctx.currentTime + 0.1;
+    }
+  },
+  musicStop: function () { this.playing = false; },
+  tick: function () {
+    if (!this.playing || !this.ctx || !this.on) return;
+    var ahead = this.ctx.currentTime + 0.25;
+    for (var t, i = 0; i < this.tracks.length; i++) {
+      t = this.tracks[i];
+      var guard = 0;
+      while (t.next < ahead && guard++ < 64) {
+        var n = t.notes[t.i % t.notes.length];
+        var dur = n[1] * this.unit;
+        this.note(n[0], t.next, dur * 0.85, t.type, t.vol);
+        t.next += dur; t.i++;
+      }
+    }
+  }
+};
+
+/* ============================================================
+   픽셀 아트 (코드로 그리는 스프라이트)
+   ============================================================ */
+var ART = {
+  mario: {
+    pal: { R:'#e03a20', S:'#f7bf8f', B:'#5c2c06', K:'#101010', O:'#2a52d0' },
+    px: [
+      "....RRRRR...",
+      "...RRRRRRRRR",
+      "...BBBSSKS..",
+      "..BSBSSSKSS.",
+      "..BSBBSSSKSS",
+      "..BBSSSSKKK.",
+      "....SSSSSS..",
+      "...RROORRR..",
+      "..RRROORRRR.",
+      ".RRRROOOORRR",
+      "SSRROOOOOORR",
+      "SSSOOOOOOOSS",
+      "..OOOOOOOO..",
+      "..OOO..OOO..",
+      ".BBB....BBB.",
+      "BBBB....BBBB"
+    ]
+  },
+  goomba: {
+    pal: { K:'#151005', B:'#a4622a', W:'#ffffff' },
+    px: [
+      "....KKKKKKKK....",
+      "..KKBBBBBBBBKK..",
+      ".KBBBBBBBBBBBBK.",
+      ".KBBWWBBBBWWBBK.",
+      "KBBWWKWBBWKWWBBK",
+      "KBBWWKWBBWKWWBBK",
+      "KBBBWWBBBBWWBBBK",
+      "KBBBBBBBBBBBBBBK",
+      ".KBBBBBBBBBBBBK.",
+      ".KBBBBBBBBBBBBK.",
+      "..KBBBBBBBBBBK..",
+      "...KKKKKKKKKK...",
+      "..KKKKKKKKKKKK..",
+      ".KKWWKKKKKKWWKK.",
+      "KKWWWWKKKKWWWWKK",
+      "..KKWWK..KWWKK.."
+    ]
+  },
+  mushroom: {
+    pal: { K:'#3a1608', R:'#e8412c', W:'#fff6e8', S:'#f2d9a8' },
+    px: [
+      "....KKKKKKKK....",
+      "..KKRRRRRRRRKK..",
+      ".KRRWWRRRRWWRRK.",
+      ".KRWWWWRRWWWWRK.",
+      "KRRWWWWRRWWWWRRK",
+      "KRRRRRRRRRRRRRRK",
+      "KRWWRRRRRRRRWWRK",
+      "KWWWWRRRRRRWWWWK",
+      ".KWWRRRRRRRRWWK.",
+      "..KKRRRRRRRRKK..",
+      "....KSSSSSSK....",
+      "....KSSKKSSK....",
+      "....KSSKKSSK....",
+      "....KSSSSSSK....",
+      ".....KSSSSK.....",
+      "......KKKK......"
+    ]
+  }
+};
+
+var spriteCache = {};
+function sprite(name, w, h, flip) {
+  var key = name + '|' + w + '|' + h + '|' + (flip ? 1 : 0);
+  if (spriteCache[key]) return spriteCache[key];
+  var a = ART[name], px = a.px, pal = a.pal;
+  var cols = px[0].length, rws = px.length;
+  var cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  var c = cv.getContext('2d');
+  var cw = w / cols, chh = h / rws;
+  for (var y = 0; y < rws; y++) {
+    var row = px[y];
+    for (var x = 0; x < cols; x++) {
+      var ch = row.charAt(x);
+      if (ch === '.' || !pal[ch]) continue;
+      var dx = flip ? (cols - 1 - x) : x;
+      c.fillStyle = pal[ch];
+      c.fillRect(Math.floor(dx * cw), Math.floor(y * chh), Math.ceil(cw), Math.ceil(chh));
+    }
+  }
+  spriteCache[key] = cv;
+  return cv;
+}
+
+/* ============================================================
+   레벨 데이터
+     gaps  : 바닥이 없는 구간(구덩이) [시작, 끝] 타일 인덱스
+     items : t=종류, x/y=타일 좌표(y 생략 시 기본값), n/w/h=반복·크기
+   ============================================================ */
+var THEMES = [
+  { sky: ['#5cb2ff', '#bfe6ff'], hill: '#3fa34d', hillDark: '#2f7d3b', cloud: '#ffffff',
+    bush: '#3fa34d', ground: '#c1662f', groundDark: '#8c4419' },
+  { sky: ['#f2895d', '#ffd9a0'], hill: '#2e7d5b', hillDark: '#215c43', cloud: '#fff1e0',
+    bush: '#2e7d5b', ground: '#a85a2a', groundDark: '#733b16' },
+  { sky: ['#1b2450', '#4b3a7a'], hill: '#2b3d6b', hillDark: '#1e2c50', cloud: '#c8d2ff',
+    bush: '#2b3d6b', ground: '#6f4a86', groundDark: '#4a2f5c' }
+];
+
+var LEVELS = [
+  {
+    name: '1-1', width: 200, theme: 0,
+    gaps: [[68, 70], [86, 88], [150, 152]],
+    items: [
+      { t: 'q', x: 16, y: 9, item: 'coin' },
+      { t: 'brick', x: 20, y: 9 },
+      { t: 'q', x: 21, y: 9, item: 'mush' },
+      { t: 'brick', x: 22, y: 9 },
+      { t: 'q', x: 23, y: 9, item: 'coin' },
+      { t: 'brick', x: 24, y: 9 },
+      { t: 'coin', x: 21, y: 6, n: 4 },
+      { t: 'goomba', x: 27 },
+      { t: 'pipe', x: 31, h: 2 },
+      { t: 'goomba', x: 37 }, { t: 'goomba', x: 40 },
+      { t: 'pipe', x: 44, h: 3 },
+      { t: 'coin', x: 48, y: 9, n: 3 },
+      { t: 'pipe', x: 54, h: 3 },
+      { t: 'brick', x: 60, y: 9, n: 4 },
+      { t: 'coin', x: 61, y: 8, n: 2 },
+      { t: 'goomba', x: 64 },
+      { t: 'coin', x: 68, y: 9, n: 3 },
+      { t: 'brick', x: 74, y: 9, n: 2 },
+      { t: 'q', x: 76, y: 9, item: 'coin' },
+      { t: 'brick', x: 77, y: 9, n: 2 },
+      { t: 'goomba', x: 80 }, { t: 'goomba', x: 82 },
+      { t: 'coin', x: 86, y: 9, n: 3 },
+      { t: 'stone', x: 92, y: 10, w: 3, h: 1 },
+      { t: 'stone', x: 98, y: 9, w: 3, h: 1 },
+      { t: 'coin', x: 99, y: 8 },
+      { t: 'goomba', x: 104 },
+      { t: 'stone', x: 106, y: 10, w: 2, h: 1 },
+      { t: 'brick', x: 110, y: 6, n: 5 },
+      { t: 'q', x: 112, y: 6, item: 'mush' },
+      { t: 'goomba', x: 113 }, { t: 'goomba', x: 116 },
+      { t: 'pipe', x: 120, h: 3 },
+      { t: 'brick', x: 126, y: 9, n: 3 },
+      { t: 'coin', x: 130, y: 9, n: 4 },
+      { t: 'goomba', x: 134 }, { t: 'goomba', x: 137 },
+      { t: 'stone', x: 140, y: 10, w: 2, h: 1 },
+      { t: 'stone', x: 145, y: 9, w: 2, h: 1 },
+      { t: 'coin', x: 150, y: 9, n: 3 },
+      { t: 'brick', x: 158, y: 9, n: 4 },
+      { t: 'q', x: 160, y: 9, item: 'coin' },
+      { t: 'goomba', x: 163 }, { t: 'goomba', x: 166 },
+      { t: 'stair', x: 172, h: 8 },
+      { t: 'flag', x: 190 }
+    ]
+  },
+  {
+    name: '1-2', width: 205, theme: 1,
+    gaps: [[40, 42], [60, 63], [95, 97], [120, 122], [160, 163]],
+    items: [
+      { t: 'goomba', x: 12 },
+      { t: 'brick', x: 14, y: 9, n: 3 },
+      { t: 'q', x: 15, y: 9, item: 'mush' },
+      { t: 'stone', x: 20, y: 10, w: 3, h: 1 },
+      { t: 'coin', x: 21, y: 9 },
+      { t: 'goomba', x: 25 }, { t: 'goomba', x: 27 },
+      { t: 'pipe', x: 31, h: 2 },
+      { t: 'pipe', x: 35, h: 3 },
+      { t: 'coin', x: 40, y: 9, n: 3 },
+      { t: 'stone', x: 45, y: 10, w: 2, h: 1 },
+      { t: 'brick', x: 47, y: 7, n: 5 },
+      { t: 'q', x: 49, y: 7, item: 'coin' },
+      { t: 'goomba', x: 52 }, { t: 'goomba', x: 55 },
+      { t: 'coin', x: 60, y: 9, n: 4 },
+      { t: 'stone', x: 66, y: 10, w: 2, h: 1 },
+      { t: 'stone', x: 71, y: 8, w: 2, h: 1 },
+      { t: 'stone', x: 76, y: 6, w: 2, h: 1 },
+      { t: 'coin', x: 76, y: 5, n: 2 },
+      { t: 'goomba', x: 84 }, { t: 'goomba', x: 87 }, { t: 'goomba', x: 90 },
+      { t: 'coin', x: 95, y: 9, n: 3 },
+      { t: 'pipe', x: 101, h: 3 },
+      { t: 'brick', x: 106, y: 9, n: 6 },
+      { t: 'q', x: 108, y: 9, item: 'coin' },
+      { t: 'q', x: 110, y: 9, item: 'mush' },
+      { t: 'goomba', x: 113 },
+      { t: 'coin', x: 120, y: 8, n: 3 },
+      { t: 'stone', x: 126, y: 10, w: 4, h: 1 },
+      { t: 'goomba', x: 127, y: 9 },
+      { t: 'brick', x: 133, y: 9, n: 4 },
+      { t: 'coin', x: 134, y: 8, n: 2 },
+      { t: 'goomba', x: 138 }, { t: 'goomba', x: 141 },
+      { t: 'pipe', x: 146, h: 3 },
+      { t: 'stone', x: 152, y: 9, w: 3, h: 1 },
+      { t: 'coin', x: 153, y: 8 },
+      { t: 'coin', x: 160, y: 9, n: 4 },
+      { t: 'brick', x: 168, y: 9, n: 3 },
+      { t: 'q', x: 169, y: 9, item: 'coin' },
+      { t: 'goomba', x: 172 }, { t: 'goomba', x: 174 }, { t: 'goomba', x: 177 },
+      { t: 'stair', x: 183, h: 7 },
+      { t: 'flag', x: 196 }
+    ]
+  },
+  {
+    name: '1-3', width: 215, theme: 2,
+    gaps: [[30, 32], [48, 51], [70, 72], [88, 91], [110, 113], [135, 138], [165, 168]],
+    items: [
+      { t: 'goomba', x: 10 }, { t: 'goomba', x: 13 },
+      { t: 'brick', x: 16, y: 9, n: 4 },
+      { t: 'q', x: 17, y: 9, item: 'mush' },
+      { t: 'q', x: 19, y: 9, item: 'coin' },
+      { t: 'pipe', x: 24, h: 3 },
+      { t: 'coin', x: 30, y: 9, n: 3 },
+      { t: 'stone', x: 36, y: 10, w: 2, h: 1 },
+      { t: 'stone', x: 41, y: 9, w: 2, h: 1 },
+      { t: 'coin', x: 41, y: 8, n: 2 },
+      { t: 'goomba', x: 45 },
+      { t: 'coin', x: 48, y: 8, n: 4 },
+      { t: 'stone', x: 54, y: 10, w: 2, h: 1 },
+      { t: 'brick', x: 56, y: 7, n: 6 },
+      { t: 'q', x: 58, y: 7, item: 'coin' },
+      { t: 'goomba', x: 59 }, { t: 'goomba', x: 62 },
+      { t: 'coin', x: 70, y: 9, n: 3 },
+      { t: 'pipe', x: 76, h: 3 },
+      { t: 'goomba', x: 81 }, { t: 'goomba', x: 84 },
+      { t: 'coin', x: 88, y: 8, n: 4 },
+      { t: 'stone', x: 95, y: 10, w: 3, h: 1 },
+      { t: 'stone', x: 100, y: 8, w: 3, h: 1 },
+      { t: 'stone', x: 105, y: 6, w: 3, h: 1 },
+      { t: 'coin', x: 105, y: 5, n: 3 },
+      { t: 'coin', x: 110, y: 9, n: 4 },
+      { t: 'brick', x: 118, y: 9, n: 5 },
+      { t: 'q', x: 120, y: 9, item: 'mush' },
+      { t: 'goomba', x: 123 }, { t: 'goomba', x: 126 },
+      { t: 'pipe', x: 130, h: 3 },
+      { t: 'coin', x: 135, y: 8, n: 4 },
+      { t: 'stone', x: 143, y: 10, w: 2, h: 1 },
+      { t: 'stone', x: 148, y: 9, w: 2, h: 1 },
+      { t: 'stone', x: 153, y: 8, w: 2, h: 1 },
+      { t: 'coin', x: 153, y: 7, n: 2 },
+      { t: 'goomba', x: 158 },
+      { t: 'brick', x: 160, y: 9, n: 4 },
+      { t: 'coin', x: 165, y: 8, n: 4 },
+      { t: 'goomba', x: 173 }, { t: 'goomba', x: 176 }, { t: 'goomba', x: 179 },
+      { t: 'brick', x: 184, y: 9, n: 4 },
+      { t: 'q', x: 186, y: 9, item: 'coin' },
+      { t: 'stair', x: 193, h: 8 },
+      { t: 'flag', x: 206 }
+    ]
+  }
+];
+
+function buildLevel(def) {
+  var w = def.width, h = ROWS;
+  var tiles = [], y, x;
+  for (y = 0; y < h; y++) {
+    var row = new Array(w);
+    for (x = 0; x < w; x++) row[x] = T_EMPTY;
+    tiles.push(row);
+  }
+  var gaps = def.gaps || [];
+  function inGap(tx) {
+    for (var i = 0; i < gaps.length; i++) if (tx >= gaps[i][0] && tx <= gaps[i][1]) return true;
+    return false;
+  }
+  for (x = 0; x < w; x++) {
+    if (!inGap(x)) { tiles[13][x] = T_GROUND; tiles[14][x] = T_GROUND; }
+  }
+
+  var qc = {}, spawns = [], flagX = w - 10;
+
+  function put(tx, ty, code) {
+    if (ty < 0 || ty >= h || tx < 0 || tx >= w) return;
+    tiles[ty][tx] = code;
+  }
+
+  for (var i = 0; i < def.items.length; i++) {
+    var it = def.items[i], n, k;
+    switch (it.t) {
+      case 'brick':
+        n = it.n || 1;
+        for (k = 0; k < n; k++) put(it.x + k, it.y, T_BRICK);
+        break;
+      case 'q':
+        put(it.x, it.y, T_QUESTION);
+        qc[it.x + ',' + it.y] = it.item || 'coin';
+        break;
+      case 'coin':
+        n = it.n || 1;
+        for (k = 0; k < n; k++) put(it.x + k, it.y, T_COIN);
+        break;
+      case 'stone':
+        for (var sy = 0; sy < (it.h || 1); sy++)
+          for (var sx = 0; sx < (it.w || 1); sx++) put(it.x + sx, it.y + sy, T_STONE);
+        break;
+      case 'pipe':
+        for (var py = 0; py < it.h; py++) {
+          var ty2 = 12 - py;
+          put(it.x, ty2, py === it.h - 1 ? T_PIPE_TOP : T_PIPE);
+          put(it.x + 1, ty2, py === it.h - 1 ? T_PIPE_TOP : T_PIPE);
+        }
+        break;
+      case 'stair':
+        for (k = 0; k < it.h; k++)
+          for (var q = 0; q <= k; q++) put(it.x + k, 12 - q, T_STONE);
+        break;
+      case 'goomba':
+        spawns.push({ type: 'goomba', tx: it.x, ty: it.y === undefined ? 12 : it.y });
+        break;
+      case 'flag':
+        flagX = it.x;
+        break;
+    }
+  }
+  return { tiles: tiles, w: w, h: h, qc: qc, spawns: spawns, flagX: flagX,
+           name: def.name, theme: THEMES[def.theme || 0] };
+}
+
+/* ============================================================
+   게임 상태
+   ============================================================ */
+var STATE = 'title';           // title | play | dead | clear | over | win
+var paused = false;
+var Level = null, levelIndex = 0;
+var camX = 0, gameTime = START_TIME, stateT = 0, worldT = 0;
+var score = 0, coins = 0, lives = START_LIVES;
+var best = 0;
+try { best = parseInt(localStorage.getItem('mario_best') || '0', 10) || 0; } catch (e) {}
+
+var entities = [];   // 굼바 · 버섯
+var parts = [];      // 파편 · 코인 팝 · 점수 팝
+var bumps = [];      // 블록 튕김 애니메이션
+
+var P = {
+  x: 0, y: 0, w: 22, h: 28, vx: 0, vy: 0,
+  onGround: false, face: 1, big: false, invuln: 0,
+  anim: 0, jumpHeld: false, dying: false, noClip: false, coyote: 0, jumpBuf: 0
+};
+
+function loadLevel(idx) {
+  levelIndex = idx;
+  Level = buildLevel(LEVELS[idx]);
+  resetLevel();
+}
+
+function resetLevel() {
+  var def = LEVELS[levelIndex];
+  Level = buildLevel(def);
+  entities = []; parts = []; bumps = [];
+  for (var i = 0; i < Level.spawns.length; i++) {
+    var s = Level.spawns[i];
+    entities.push(makeGoomba(s.tx * TILE + 3, s.ty * TILE + (TILE - 26)));
+  }
+  P.x = 3 * TILE; P.y = 11 * TILE; P.vx = 0; P.vy = 0;
+  P.face = 1; P.invuln = 0; P.dying = false; P.noClip = false; P.anim = 0;
+  P.coyote = 0; P.jumpBuf = 0; P.jumpHeld = false;
+  setSize(P.big);
+  camX = 0; gameTime = START_TIME; stateT = 0;
+  STATE = 'play'; paused = false;
+  Snd.musicStart();
+}
+
+function setSize(big) {
+  P.big = big;
+  var bottom = P.y + P.h;
+  P.w = big ? 26 : 22;
+  P.h = big ? 46 : 28;
+  P.y = bottom - P.h;
+}
+
+function makeGoomba(x, y) {
+  return { type: 'goomba', x: x, y: y, w: 26, h: 26, vx: -48, vy: 0,
+           active: false, dead: false, deadT: 0, onGround: false, anim: 0 };
+}
+function makeMushroom(x, y) {
+  return { type: 'mushroom', x: x, y: y, w: 24, h: 24, vx: 70, vy: -120,
+           active: true, dead: false, onGround: false, spawnT: 0.35 };
+}
+
+/* ============================================================
+   타일 유틸 & 충돌
+   ============================================================ */
+function tileAt(tx, ty) {
+  if (ty < 0) return T_EMPTY;
+  if (ty >= Level.h) return T_EMPTY;
+  if (tx < 0 || tx >= Level.w) return T_GROUND;   // 좌우 벽
+  return Level.tiles[ty][tx];
+}
+function isSolid(code) { return !!SOLID[code]; }
+
+function resolveX(b) {
+  var x1 = Math.floor(b.x / TILE), x2 = Math.floor((b.x + b.w - 1) / TILE);
+  var y1 = Math.floor(b.y / TILE), y2 = Math.floor((b.y + b.h - 1) / TILE);
+  var y;
+  if (b.vx > 0) {
+    for (y = y1; y <= y2; y++) if (isSolid(tileAt(x2, y))) {
+      b.x = x2 * TILE - b.w; b.vx = 0; b.hitWall = true; return;
+    }
+  } else if (b.vx < 0) {
+    for (y = y1; y <= y2; y++) if (isSolid(tileAt(x1, y))) {
+      b.x = (x1 + 1) * TILE; b.vx = 0; b.hitWall = true; return;
+    }
+  }
+}
+
+function resolveY(b) {
+  var x1 = Math.floor(b.x / TILE), x2 = Math.floor((b.x + b.w - 1) / TILE);
+  var y1 = Math.floor(b.y / TILE), y2 = Math.floor((b.y + b.h - 1) / TILE);
+  var x;
+  b.onGround = false;
+  if (b.vy > 0) {
+    for (x = x1; x <= x2; x++) if (isSolid(tileAt(x, y2))) {
+      b.y = y2 * TILE - b.h; b.vy = 0; b.onGround = true; return;
+    }
+  } else if (b.vy < 0) {
+    var hit = -1, cx = b.x + b.w / 2;
+    for (x = x1; x <= x2; x++) if (isSolid(tileAt(x, y1))) {
+      if (hit < 0 || Math.abs((x + 0.5) * TILE - cx) < Math.abs((hit + 0.5) * TILE - cx)) hit = x;
+    }
+    if (hit >= 0) {
+      b.y = (y1 + 1) * TILE; b.vy = 0;
+      if (b.onHead) b.onHead(hit, y1);
+    }
+  }
+}
+
+// 바닥에 정확히 붙어 있을 때 onGround 가 한 프레임씩 깜빡이는 것을 막는 1px 접지 검사
+function groundSnap(b) {
+  if (b.onGround || b.vy < 0) return;
+  var ty = Math.floor((b.y + b.h + 1) / TILE);
+  var x1 = Math.floor(b.x / TILE), x2 = Math.floor((b.x + b.w - 1) / TILE);
+  for (var x = x1; x <= x2; x++) {
+    if (isSolid(tileAt(x, ty))) {
+      b.y = ty * TILE - b.h; b.vy = 0; b.onGround = true; return;
+    }
+  }
+}
+
+function moveBody(b, dt, gravScale) {
+  b.hitWall = false;
+  b.x += b.vx * dt;
+  resolveX(b);
+  b.vy += GRAV * (gravScale === undefined ? 1 : gravScale) * dt;
+  if (b.vy > MAXFALL) b.vy = MAXFALL;
+  b.y += b.vy * dt;
+  resolveY(b);
+  groundSnap(b);
+}
+
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/* ============================================================
+   입력
+   ============================================================ */
+var Keys = { left: false, right: false, jump: false, run: false };
+var jumpPressed = false;
+var KMAP = {
+  ArrowLeft: 'left', KeyA: 'left',
+  ArrowRight: 'right', KeyD: 'right',
+  Space: 'jump', ArrowUp: 'jump', KeyW: 'jump', KeyZ: 'jump', KeyK: 'jump',
+  ShiftLeft: 'run', ShiftRight: 'run', KeyX: 'run', KeyJ: 'run'
+};
+
+function anyStart() {
+  Snd.init(); Snd.resume();
+  if (STATE === 'title') {
+    score = 0; coins = 0; lives = START_LIVES;
+    P.big = false;
+    Snd.sfx('start');
+    loadLevel(0);
+  } else if (STATE === 'over' || STATE === 'win') {
+    STATE = 'title';
+  }
+}
+
+window.addEventListener('keydown', function (e) {
+  var k = KMAP[e.code];
+  if (k) {
+    e.preventDefault();
+    if (k === 'jump' && !Keys.jump) jumpPressed = true;
+    Keys[k] = true;
+  }
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (STATE !== 'play') anyStart();
+    Snd.init(); Snd.resume();
+  }
+  if (e.code === 'KeyP' && STATE === 'play') paused = !paused;
+  if (e.code === 'KeyM') {
+    Snd.init(); Snd.on = !Snd.on;
+    if (!Snd.on) Snd.musicStop();
+    else if (STATE === 'play') Snd.musicStart();
+  }
+  if (e.code === 'KeyR') {
+    Snd.init(); Snd.resume();
+    if (STATE === 'title') anyStart();
+    else { score = 0; coins = 0; lives = START_LIVES; P.big = false; loadLevel(0); }
+  }
+}, false);
+
+window.addEventListener('keyup', function (e) {
+  var k = KMAP[e.code];
+  if (k) { e.preventDefault(); Keys[k] = false; }
+}, false);
+
+window.addEventListener('blur', function () {
+  Keys.left = Keys.right = Keys.jump = Keys.run = false;
+  if (STATE === 'play') paused = true;
+});
+
+canvas.addEventListener('pointerdown', function () {
+  if (STATE !== 'play') anyStart();
+  Snd.init(); Snd.resume();
+});
+
+(function bindPad() {
+  var btns = document.querySelectorAll('#pad button');
+  for (var i = 0; i < btns.length; i++) {
+    (function (b) {
+      var k = b.getAttribute('data-k');
+      function down(e) {
+        e.preventDefault();
+        if (k === 'jump' && !Keys.jump) jumpPressed = true;
+        Keys[k] = true;
+        Snd.init(); Snd.resume();
+        if (STATE !== 'play') anyStart();
+      }
+      function up(e) { e.preventDefault(); Keys[k] = false; }
+      b.addEventListener('pointerdown', down);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('pointerleave', up);
+    })(btns[i]);
+  }
+})();
+
+/* ============================================================
+   이펙트
+   ============================================================ */
+function addScore(v, x, y) {
+  score += v;
+  if (score > best) { best = score; try { localStorage.setItem('mario_best', String(best)); } catch (e) {} }
+  if (x !== undefined) parts.push({ kind: 'text', x: x, y: y, t: 0, life: 0.9, text: '+' + v });
+}
+function addCoinPop(x, y) {
+  parts.push({ kind: 'coin', x: x, y: y, vy: -300, t: 0, life: 0.5 });
+}
+function addDebris(tx, ty) {
+  for (var i = 0; i < 4; i++) {
+    parts.push({
+      kind: 'debris', x: tx * TILE + (i % 2) * 16 + 4, y: ty * TILE + Math.floor(i / 2) * 16 + 4,
+      vx: (i % 2 ? 110 : -110), vy: (i < 2 ? -340 : -190), t: 0, life: 1.4
+    });
+  }
+}
+function bumpBlock(tx, ty) { bumps.push({ x: tx, y: ty, t: 0 }); }
+function bumpOffset(tx, ty) {
+  for (var i = 0; i < bumps.length; i++) {
+    var b = bumps[i];
+    if (b.x === tx && b.y === ty) return -Math.sin(Math.min(b.t / 0.18, 1) * Math.PI) * 10;
+  }
+  return 0;
+}
+
+/* ============================================================
+   플레이어
+   ============================================================ */
+P.onHead = function (tx, ty) {
+  var code = Level.tiles[ty][tx];
+  if (code === T_QUESTION) {
+    var what = Level.qc[tx + ',' + ty] || 'coin';
+    Level.tiles[ty][tx] = T_USED;
+    bumpBlock(tx, ty);
+    if (what === 'mush') {
+      entities.push(makeMushroom(tx * TILE + 4, ty * TILE - 24));
+      Snd.sfx('power');
+    } else {
+      coins++; addScore(200, tx * TILE, ty * TILE - 10);
+      addCoinPop(tx * TILE + 8, ty * TILE - 6);
+      Snd.sfx('coin');
+      checkExtraLife();
+    }
+  } else if (code === T_BRICK) {
+    if (P.big) {
+      Level.tiles[ty][tx] = T_EMPTY;
+      addDebris(tx, ty);
+      addScore(50);
+      Snd.sfx('break');
+    } else {
+      bumpBlock(tx, ty);
+      Snd.sfx('bump');
+    }
+  } else {
+    Snd.sfx('bump');
+  }
+};
+
+function checkExtraLife() {
+  if (coins >= 100) { coins -= 100; lives++; Snd.sfx('life'); }
+}
+
+function playerHurt() {
+  if (P.invuln > 0 || P.dying) return;
+  if (P.big) { setSize(false); P.invuln = 1.8; Snd.sfx('shrink'); }
+  else killPlayer();
+}
+
+function killPlayer() {
+  if (P.dying) return;
+  P.dying = true; P.noClip = true;
+  P.vy = -520; P.vx = 0;
+  STATE = 'dead'; stateT = 0;
+  Snd.sfx('die');
+}
+
+function updatePlayer(dt) {
+  if (P.dying) {
+    P.vy += GRAV * 0.6 * dt;
+    P.y += P.vy * dt;
+    return;
+  }
+
+  var maxSpd = Keys.run ? MAXRUN : MAXWALK;
+  var dir = (Keys.right ? 1 : 0) - (Keys.left ? 1 : 0);
+
+  if (dir !== 0) {
+    P.vx += dir * ACC * dt;
+    P.face = dir;
+    if (P.vx > maxSpd) P.vx = Math.max(maxSpd, P.vx - FRIC * dt);
+    if (P.vx < -maxSpd) P.vx = Math.min(-maxSpd, P.vx + FRIC * dt);
+  } else {
+    if (P.vx > 0) P.vx = Math.max(0, P.vx - FRIC * dt);
+    else if (P.vx < 0) P.vx = Math.min(0, P.vx + FRIC * dt);
+  }
+
+  // 코요테 타임 + 점프 선입력 버퍼 (입력이 씹히지 않게)
+  if (P.onGround) P.coyote = 0.10;
+  else P.coyote = Math.max(0, P.coyote - dt);
+  if (jumpPressed) P.jumpBuf = 0.12;
+  else P.jumpBuf = Math.max(0, P.jumpBuf - dt);
+
+  if (P.jumpBuf > 0 && P.coyote > 0) {
+    P.vy = JUMP;
+    P.onGround = false;
+    P.jumpHeld = true;
+    P.jumpBuf = 0; P.coyote = 0;
+    Snd.sfx('jump');
+  }
+  if (!Keys.jump) P.jumpHeld = false;
+
+  var gs = (P.vy < 0 && P.jumpHeld && Keys.jump) ? HOLD_SCALE : 1;
+  moveBody(P, dt, gs);
+
+  // 화면 왼쪽 밖으로 못 나감
+  if (P.x < camX) { P.x = camX; if (P.vx < 0) P.vx = 0; }
+  if (P.x + P.w > Level.w * TILE) { P.x = Level.w * TILE - P.w; P.vx = 0; }
+
+  // 애니메이션
+  if (!P.onGround) P.anim = 0;
+  else if (Math.abs(P.vx) > 8) P.anim += Math.abs(P.vx) * dt * 0.06;
+  else P.anim = 0;
+
+  if (P.invuln > 0) P.invuln -= dt;
+
+  // 코인 획득
+  var x1 = Math.floor(P.x / TILE), x2 = Math.floor((P.x + P.w - 1) / TILE);
+  var y1 = Math.floor(P.y / TILE), y2 = Math.floor((P.y + P.h - 1) / TILE);
+  for (var ty = y1; ty <= y2; ty++) {
+    for (var tx = x1; tx <= x2; tx++) {
+      if (tx < 0 || tx >= Level.w || ty < 0 || ty >= Level.h) continue;
+      if (Level.tiles[ty][tx] === T_COIN) {
+        Level.tiles[ty][tx] = T_EMPTY;
+        coins++; addScore(100);
+        addCoinPop(tx * TILE + 8, ty * TILE);
+        Snd.sfx('coin');
+        checkExtraLife();
+      }
+    }
+  }
+
+  // 구덩이 추락
+  if (P.y > VH + 40) killPlayer();
+
+  // 깃대 도착
+  if (P.x + P.w > Level.flagX * TILE + 6) {
+    STATE = 'clear'; stateT = 0;
+    addScore(2000 + Math.floor(gameTime) * 10);
+    Snd.sfx('clear');
+  }
+}
+
+/* ============================================================
+   엔티티
+   ============================================================ */
+function updateEntities(dt) {
+  for (var i = entities.length - 1; i >= 0; i--) {
+    var e = entities[i];
+
+    if (!e.active) {
+      if (e.x < camX + VW + 48) e.active = true;
+      else continue;
+    }
+
+    if (e.dead) {
+      e.deadT += dt;
+      if (e.deadT > 0.45) entities.splice(i, 1);
+      continue;
+    }
+
+    if (e.type === 'goomba') {
+      e.anim += dt;
+      moveBody(e, dt);
+      if (e.hitWall) e.vx = -e.vx;
+      // 절벽에서 방향 전환
+      if (e.onGround) {
+        var ahead = Math.floor((e.vx > 0 ? e.x + e.w + 2 : e.x - 2) / TILE);
+        var below = Math.floor((e.y + e.h + 4) / TILE);
+        if (!isSolid(tileAt(ahead, below))) e.vx = -e.vx;
+      }
+      if (e.y > VH + 60) { entities.splice(i, 1); continue; }
+
+      if (!P.dying && overlap(P, e)) {
+        var stomp = P.vy > 60 && (P.y + P.h) - e.y < 20;
+        if (stomp) {
+          e.dead = true; e.deadT = 0;
+          P.vy = -360; P.jumpHeld = false;
+          addScore(100, e.x, e.y - 8);
+          Snd.sfx('stomp');
+        } else {
+          playerHurt();
+        }
+      }
+    } else if (e.type === 'mushroom') {
+      if (e.spawnT > 0) {
+        e.spawnT -= dt;
+        e.y -= 42 * dt;
+      } else {
+        moveBody(e, dt);
+        if (e.hitWall) e.vx = -e.vx;
+      }
+      if (e.y > VH + 60) { entities.splice(i, 1); continue; }
+      if (!P.dying && overlap(P, e)) {
+        entities.splice(i, 1);
+        if (!P.big) setSize(true);
+        addScore(1000, e.x, e.y - 8);
+        Snd.sfx('power');
+        continue;
+      }
+    }
+  }
+}
+
+function updateParts(dt) {
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var p = parts[i];
+    p.t += dt;
+    if (p.kind === 'debris') { p.vy += GRAV * 0.8 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+    else if (p.kind === 'coin') { p.vy += GRAV * 0.9 * dt; p.y += p.vy * dt; }
+    else if (p.kind === 'text') { p.y -= 34 * dt; }
+    if (p.t > p.life) parts.splice(i, 1);
+  }
+  for (var j = bumps.length - 1; j >= 0; j--) {
+    bumps[j].t += dt;
+    if (bumps[j].t > 0.2) bumps.splice(j, 1);
+  }
+}
+
+/* ============================================================
+   메인 업데이트
+   ============================================================ */
+function update(dt) {
+  worldT += dt;
+  Snd.tick();
+
+  if (STATE === 'title' || STATE === 'over' || STATE === 'win') { jumpPressed = false; return; }
+  if (paused) { jumpPressed = false; return; }
+
+  stateT += dt;
+
+  if (STATE === 'play') {
+    updatePlayer(dt);
+    updateEntities(dt);
+    updateParts(dt);
+
+    gameTime -= dt * 2.5;
+    if (gameTime <= 0) { gameTime = 0; killPlayer(); }
+
+    var target = P.x + P.w / 2 - VW * 0.42;
+    if (target > camX) camX = target;
+    var maxCam = Level.w * TILE - VW;
+    if (camX < 0) camX = 0;
+    if (camX > maxCam) camX = maxCam;
+  } else if (STATE === 'dead') {
+    updatePlayer(dt);
+    updateParts(dt);
+    if (stateT > 2.2) {
+      lives--;
+      if (lives < 0) { STATE = 'over'; stateT = 0; Snd.musicStop(); }
+      else { P.big = false; resetLevel(); }
+    }
+  } else if (STATE === 'clear') {
+    updateParts(dt);
+    if (P.vx !== 0 || !P.onGround) {
+      P.vx *= 0.9;
+      moveBody(P, dt);
+    }
+    if (stateT > 3.2) {
+      if (levelIndex + 1 < LEVELS.length) loadLevel(levelIndex + 1);
+      else { STATE = 'win'; stateT = 0; Snd.musicStop(); }
+    }
+  }
+
+  jumpPressed = false;
+}
+
+/* ============================================================
+   그리기 — 배경
+   ============================================================ */
+function drawBackground() {
+  var th = Level ? Level.theme : THEMES[0];
+  var g = ctx.createLinearGradient(0, 0, 0, VH);
+  g.addColorStop(0, th.sky[0]);
+  g.addColorStop(1, th.sky[1]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VW, VH);
+
+  // 구름 (원거리 패럴랙스)
+  var cx = -(camX * 0.15);
+  ctx.fillStyle = th.cloud;
+  ctx.globalAlpha = 0.9;
+  for (var i = 0; i < 26; i++) {
+    var bx = (cx + i * 340) % (26 * 340);
+    if (bx < -180) bx += 26 * 340;
+    var by = 46 + ((i * 53) % 90);
+    drawCloud(bx, by, 1 + ((i % 3) * 0.25));
+  }
+  ctx.globalAlpha = 1;
+
+  // 언덕
+  var hx = -(camX * 0.3);
+  for (var j = 0; j < 26; j++) {
+    var x = (hx + j * 420) % (26 * 420);
+    if (x < -260) x += 26 * 420;
+    drawHill(x, 13 * TILE, 200, 96, th);
+    drawHill(x + 210, 13 * TILE, 130, 62, th);
+  }
+
+  // 수풀
+  var sx = -(camX * 0.62);
+  ctx.fillStyle = th.bush;
+  for (var k = 0; k < 30; k++) {
+    var x2 = (sx + k * 260) % (30 * 260);
+    if (x2 < -150) x2 += 30 * 260;
+    drawBush(x2, 13 * TILE);
+  }
+}
+
+function drawCloud(x, y, s) {
+  ctx.beginPath();
+  ctx.arc(x, y, 18 * s, 0, 6.2832);
+  ctx.arc(x + 22 * s, y - 10 * s, 24 * s, 0, 6.2832);
+  ctx.arc(x + 48 * s, y, 19 * s, 0, 6.2832);
+  ctx.arc(x + 24 * s, y + 10 * s, 20 * s, 0, 6.2832);
+  ctx.fill();
+}
+
+function drawHill(x, baseY, w, h, th) {
+  ctx.fillStyle = th.hillDark;
+  ctx.beginPath();
+  ctx.moveTo(x - w / 2, baseY);
+  ctx.quadraticCurveTo(x, baseY - h * 1.35, x + w / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = th.hill;
+  ctx.beginPath();
+  ctx.moveTo(x - w / 2 + 12, baseY);
+  ctx.quadraticCurveTo(x + 6, baseY - h * 1.1, x + w / 2 - 12, baseY);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBush(x, baseY) {
+  ctx.beginPath();
+  ctx.arc(x, baseY - 8, 20, Math.PI, 0);
+  ctx.arc(x + 30, baseY - 12, 26, Math.PI, 0);
+  ctx.arc(x + 62, baseY - 8, 20, Math.PI, 0);
+  ctx.rect(x - 20, baseY - 10, 102, 12);
+  ctx.fill();
+}
+
+/* ============================================================
+   그리기 — 타일
+   ============================================================ */
+function drawTiles() {
+  var th = Level.theme;
+  var x0 = Math.max(0, Math.floor(camX / TILE) - 1);
+  var x1 = Math.min(Level.w - 1, Math.floor((camX + VW) / TILE) + 1);
+  for (var ty = 0; ty < Level.h; ty++) {
+    for (var tx = x0; tx <= x1; tx++) {
+      var code = Level.tiles[ty][tx];
+      if (code === T_EMPTY) continue;
+      var px = Math.round(tx * TILE - camX);
+      var py = ty * TILE + bumpOffset(tx, ty);
+      drawTile(code, px, py, tx, ty, th);
+    }
+  }
+}
+
+function drawTile(code, x, y, tx, ty, th) {
+  switch (code) {
+    case T_GROUND:
+      ctx.fillStyle = th.ground;
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = th.groundDark;
+      ctx.fillRect(x, y, TILE, 4);
+      ctx.fillRect(x, y + 15, TILE, 2);
+      ctx.fillRect(x + 15, y + 4, 2, 11);
+      ctx.fillRect(x, y + 17, 2, 15);
+      ctx.fillRect(x + 30, y + 17, 2, 15);
+      ctx.fillStyle = 'rgba(255,255,255,.16)';
+      ctx.fillRect(x + 2, y + 5, 11, 9);
+      ctx.fillRect(x + 19, y + 5, 11, 9);
+      ctx.fillRect(x + 3, y + 19, 26, 10);
+      break;
+    case T_BRICK:
+      ctx.fillStyle = '#c4551f';
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#eddcc4';
+      ctx.fillRect(x, y, TILE, 3);
+      ctx.fillRect(x, y + 10, TILE, 3);
+      ctx.fillRect(x, y + 21, TILE, 3);
+      ctx.fillRect(x + 14, y + 3, 3, 7);
+      ctx.fillRect(x + 6, y + 13, 3, 8);
+      ctx.fillRect(x + 22, y + 13, 3, 8);
+      ctx.fillRect(x + 14, y + 24, 3, 8);
+      break;
+    case T_QUESTION:
+      var pulse = 0.5 + 0.5 * Math.sin(worldT * 5 + tx);
+      ctx.fillStyle = '#e2a02c';
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.14 + pulse * 0.22) + ')';
+      ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
+      ctx.fillStyle = '#8a5a10';
+      ctx.fillRect(x, y, TILE, 3); ctx.fillRect(x, y + 29, TILE, 3);
+      ctx.fillRect(x, y, 3, TILE); ctx.fillRect(x + 29, y, 3, TILE);
+      ctx.fillStyle = '#5d3a06';
+      ctx.font = 'bold 22px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('?', x + TILE / 2, y + TILE / 2 + 1);
+      break;
+    case T_USED:
+      ctx.fillStyle = '#9a6a22';
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#6d480f';
+      ctx.fillRect(x, y, TILE, 3); ctx.fillRect(x, y + 29, TILE, 3);
+      ctx.fillRect(x, y, 3, TILE); ctx.fillRect(x + 29, y, 3, TILE);
+      break;
+    case T_STONE:
+      ctx.fillStyle = '#9d9db0';
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#6f6f85';
+      ctx.fillRect(x, y + 15, TILE, 2);
+      ctx.fillRect(x + 15, y, 2, 15);
+      ctx.fillRect(x + 7, y + 17, 2, 15);
+      ctx.fillRect(x + 23, y + 17, 2, 15);
+      ctx.fillStyle = 'rgba(255,255,255,.3)';
+      ctx.fillRect(x, y, TILE, 3);
+      break;
+    case T_PIPE_TOP:
+    case T_PIPE:
+      var left = tileAt(tx - 1, ty) !== T_PIPE && tileAt(tx - 1, ty) !== T_PIPE_TOP;
+      var top = code === T_PIPE_TOP;
+      ctx.fillStyle = '#33c04d';
+      if (top) ctx.fillRect(x - (left ? 4 : 0), y, TILE + 4, TILE);
+      else ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = '#1c8c33';
+      if (top) {
+        if (left) ctx.fillRect(x - 4, y, 6, TILE);
+        else ctx.fillRect(x + TILE - 2, y, 6, TILE);
+        ctx.fillRect(x - (left ? 4 : 0), y + TILE - 4, TILE + 4, 4);
+      } else {
+        if (left) ctx.fillRect(x, y, 5, TILE);
+        else ctx.fillRect(x + TILE - 5, y, 5, TILE);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.34)';
+      ctx.fillRect(x + (left ? 6 : 0), y + 2, left ? 7 : 5, TILE - 4);
+      break;
+    case T_COIN:
+      drawCoin(x + TILE / 2, y + TILE / 2, worldT * 5 + tx);
+      break;
+  }
+}
+
+function drawCoin(cx, cy, phase) {
+  var sx = Math.abs(Math.cos(phase));
+  var w = 6 + 8 * sx;
+  ctx.fillStyle = '#f7d33c';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, w, 13, 0, 0, 6.2832);
+  ctx.fill();
+  ctx.fillStyle = '#c99a12';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, w * 0.45, 8, 0, 0, 6.2832);
+  ctx.fill();
+}
+
+function drawFlagAndCastle() {
+  var fx = Level.flagX * TILE - camX;
+  // 깃대
+  ctx.fillStyle = '#3f3f52';
+  ctx.fillRect(fx + 12, 4 * TILE, 6, 9 * TILE);
+  ctx.fillStyle = '#d8d8e8';
+  ctx.fillRect(fx + 8, 12 * TILE + 20, 14, 12);
+  // 깃발
+  var wave = Math.sin(worldT * 3) * 4;
+  ctx.fillStyle = '#2ecc71';
+  ctx.beginPath();
+  ctx.moveTo(fx + 18, 4 * TILE + 4);
+  ctx.lineTo(fx + 74 + wave, 4 * TILE + 22);
+  ctx.lineTo(fx + 18, 4 * TILE + 42);
+  ctx.closePath();
+  ctx.fill();
+
+  // 성
+  var bx = (Level.w - 8) * TILE - camX;
+  var by = 13 * TILE;
+  ctx.fillStyle = '#b8792f';
+  ctx.fillRect(bx, by - 118, 168, 118);
+  ctx.fillStyle = '#8d5620';
+  for (var i = 0; i < 7; i++) ctx.fillRect(bx + i * 24, by - 134, 16, 18);
+  ctx.fillRect(bx + 60, by - 176, 48, 44);
+  ctx.fillStyle = '#b8792f';
+  ctx.fillRect(bx + 62, by - 174, 44, 40);
+  ctx.fillStyle = '#3b2a18';
+  ctx.fillRect(bx + 66, by - 60, 36, 60);
+  ctx.beginPath();
+  ctx.arc(bx + 84, by - 60, 18, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = '#e8e8f4';
+  ctx.fillRect(bx + 30, by - 96, 18, 20);
+  ctx.fillRect(bx + 120, by - 96, 18, 20);
+}
+
+/* ============================================================
+   그리기 — 캐릭터 · 이펙트
+   ============================================================ */
+function drawPlayer() {
+  if (P.invuln > 0 && Math.floor(P.invuln * 14) % 2 === 0) return;
+  var sw = P.w + 8, sh = P.h + 2;
+  var img = sprite('mario', sw, sh, P.face < 0);
+  var dx = Math.round(P.x - camX - 4);
+  var dy = Math.round(P.y + P.h - sh);
+
+  var squash = 0;
+  if (!P.onGround && !P.dying) squash = P.vy < 0 ? -2 : 2;
+
+  ctx.save();
+  if (P.onGround && Math.abs(P.vx) > 8) {
+    var tilt = Math.sin(P.anim * 3.2) * 0.06;
+    ctx.translate(dx + sw / 2, dy + sh);
+    ctx.rotate(tilt);
+    ctx.drawImage(img, -sw / 2, -sh, sw, sh);
+  } else {
+    ctx.drawImage(img, dx, dy - squash, sw, sh + squash);
+  }
+  ctx.restore();
+}
+
+function drawEntities() {
+  for (var i = 0; i < entities.length; i++) {
+    var e = entities[i];
+    if (!e.active) continue;
+    var ex = Math.round(e.x - camX), ey = Math.round(e.y);
+    if (ex < -80 || ex > VW + 80) continue;
+
+    if (e.type === 'goomba') {
+      if (e.dead) {
+        var k = Math.min(e.deadT / 0.45, 1);
+        var h = e.h * (1 - 0.75 * k);
+        ctx.globalAlpha = 1 - k * 0.5;
+        ctx.drawImage(sprite('goomba', e.w + 2, Math.max(4, h), false), ex - 1, ey + (e.h - h));
+        ctx.globalAlpha = 1;
+      } else {
+        var flip = Math.floor(e.anim * 5) % 2 === 0;
+        ctx.drawImage(sprite('goomba', e.w + 2, e.h + 2, flip), ex - 1, ey - 2);
+      }
+    } else if (e.type === 'mushroom') {
+      ctx.drawImage(sprite('mushroom', e.w, e.h, false), ex, ey);
+    }
+  }
+}
+
+function drawParts() {
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i], px = Math.round(p.x - camX);
+    if (p.kind === 'debris') {
+      ctx.fillStyle = '#c4551f';
+      ctx.fillRect(px, Math.round(p.y), 10, 10);
+      ctx.fillStyle = '#eddcc4';
+      ctx.fillRect(px, Math.round(p.y), 10, 3);
+    } else if (p.kind === 'coin') {
+      drawCoin(px, p.y, p.t * 22);
+    } else if (p.kind === 'text') {
+      ctx.globalAlpha = Math.max(0, 1 - p.t / p.life);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 15px "Trebuchet MS", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.6)';
+      ctx.strokeText(p.text, px, p.y);
+      ctx.fillText(p.text, px, p.y);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/* ============================================================
+   그리기 — HUD & 오버레이
+   ============================================================ */
+function text(str, x, y, size, color, align, weight) {
+  ctx.font = (weight || 'bold') + ' ' + size + 'px "Malgun Gothic", "Trebuchet MS", sans-serif';
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = Math.max(3, size / 6);
+  ctx.strokeStyle = 'rgba(0,0,0,.62)';
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = color || '#fff';
+  ctx.fillText(str, x, y);
+}
+
+function pad(n, len) {
+  var s = String(n);
+  while (s.length < len) s = '0' + s;
+  return s;
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(0,0,0,.22)';
+  ctx.fillRect(0, 0, VW, 40);
+
+  text('SCORE', 20, 13, 12, '#ffe9a8');
+  text(pad(score, 6), 20, 28, 16, '#fff');
+
+  drawCoin(140, 22, worldT * 6);
+  text('x ' + pad(coins, 2), 156, 22, 16, '#fff');
+
+  text('WORLD', 300, 13, 12, '#ffe9a8');
+  text(Level ? Level.name : '1-1', 300, 28, 16, '#fff');
+
+  text('TIME', 420, 13, 12, '#ffe9a8');
+  text(pad(Math.ceil(gameTime), 3), 420, 28, 16, gameTime < 60 ? '#ff8a7a' : '#fff');
+
+  text('LIFE', 540, 13, 12, '#ffe9a8');
+  var img = sprite('mario', 16, 21, false);
+  for (var i = 0; i < Math.max(0, lives); i++) ctx.drawImage(img, 540 + i * 20, 18);
+
+  text('BEST ' + pad(best, 6), VW - 20, 22, 14, '#cfe6ff', 'right');
+}
+
+function dimScreen(a) {
+  ctx.fillStyle = 'rgba(8,10,24,' + a + ')';
+  ctx.fillRect(0, 0, VW, VH);
+}
+
+function drawTitle() {
+  // 타이틀 배경
+  Level = Level || buildLevel(LEVELS[0]);
+  drawBackground();
+  dimScreen(0.45);
+
+  var bob = Math.sin(worldT * 2) * 6;
+  ctx.drawImage(sprite('mario', 66, 88, false), VW / 2 - 33, 92 + bob);
+
+  text('SUPER MARIO', VW / 2, 232, 54, '#ffd93b', 'center');
+  text('HTML CANVAS EDITION', VW / 2, 268, 16, '#e8f0ff', 'center');
+
+  var blink = 0.55 + 0.45 * Math.sin(worldT * 4);
+  ctx.globalAlpha = blink;
+  text('SPACE 또는 화면을 눌러 시작', VW / 2, 322, 22, '#fff', 'center');
+  ctx.globalAlpha = 1;
+
+  text('←→ 이동 · SPACE 점프 · SHIFT 달리기 · P 일시정지 · M 소리', VW / 2, 372, 14, '#cbd4f5', 'center', 'normal');
+  text('블록을 아래에서 치고 · 굼바를 밟고 · 깃발까지 달려가세요', VW / 2, 396, 14, '#cbd4f5', 'center', 'normal');
+  text('BEST ' + pad(best, 6), VW / 2, 430, 15, '#ffe9a8', 'center');
+}
+
+function drawOverlay() {
+  if (paused && STATE === 'play') {
+    dimScreen(0.5);
+    text('일시정지', VW / 2, VH / 2 - 14, 44, '#fff', 'center');
+    text('P 키를 눌러 계속', VW / 2, VH / 2 + 32, 18, '#cbd4f5', 'center');
+  } else if (STATE === 'clear') {
+    dimScreen(0.35);
+    text('스테이지 클리어!', VW / 2, VH / 2 - 30, 44, '#ffd93b', 'center');
+    text('WORLD ' + Level.name + ' 완료 · SCORE ' + pad(score, 6), VW / 2, VH / 2 + 24, 20, '#fff', 'center');
+  } else if (STATE === 'dead') {
+    if (stateT > 0.6) {
+      text('남은 목숨 ' + Math.max(0, lives - 1), VW / 2, 120, 26, '#ffb3a7', 'center');
+    }
+  } else if (STATE === 'over') {
+    dimScreen(0.68);
+    text('GAME OVER', VW / 2, VH / 2 - 40, 56, '#ff6b5b', 'center');
+    text('최종 점수 ' + pad(score, 6) + '  ·  최고 ' + pad(best, 6), VW / 2, VH / 2 + 16, 20, '#fff', 'center');
+    text('SPACE / R 키로 다시 시작', VW / 2, VH / 2 + 62, 18, '#cbd4f5', 'center');
+  } else if (STATE === 'win') {
+    dimScreen(0.68);
+    text('축하합니다! 모든 코스 클리어!', VW / 2, VH / 2 - 46, 40, '#ffd93b', 'center');
+    text('최종 점수 ' + pad(score, 6) + '  ·  최고 ' + pad(best, 6), VW / 2, VH / 2 + 12, 22, '#fff', 'center');
+    text('SPACE 키로 타이틀로', VW / 2, VH / 2 + 58, 18, '#cbd4f5', 'center');
+  }
+}
+
+function render() {
+  if (STATE === 'title') { drawTitle(); return; }
+  drawBackground();
+  drawFlagAndCastle();
+  drawTiles();
+  drawParts();
+  drawEntities();
+  drawPlayer();
+  drawHUD();
+  drawOverlay();
+}
+
+/* ============================================================
+   루프
+   ============================================================ */
+var last = 0, acc = 0, STEP = 1 / 60;
+function frame(ts) {
+  if (!last) last = ts;
+  var delta = (ts - last) / 1000;
+  last = ts;
+  if (delta > 0.25) delta = 0.25;
+  acc += delta;
+  var steps = 0;
+  while (acc >= STEP && steps < 6) { update(STEP); acc -= STEP; steps++; }
+  if (steps === 0) { worldT += delta; Snd.tick(); }
+  render();
+  requestAnimationFrame(frame);
+}
+
+Level = buildLevel(LEVELS[0]);
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
